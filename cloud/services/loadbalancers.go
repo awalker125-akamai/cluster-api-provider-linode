@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/linode/linodego"
-	"sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 
-	"github.com/linode/cluster-api-provider-linode/api/v1alpha2"
+	infrav1alpha2 "github.com/linode/cluster-api-provider-linode/api/v1alpha2"
 	"github.com/linode/cluster-api-provider-linode/cloud/scope"
 	"github.com/linode/cluster-api-provider-linode/util"
 )
@@ -21,8 +21,69 @@ const (
 	DefaultKonnectivityLBPort = 8132
 )
 
-// EnsureNodeBalancer creates a new NodeBalancer if one doesn't exist or returns the existing NodeBalancer
-func EnsureNodeBalancer(ctx context.Context, clusterScope *scope.ClusterScope, logger logr.Logger) (*linodego.NodeBalancer, error) {
+func HandleNBCreate(ctx context.Context, logger logr.Logger, clusterScope *scope.ClusterScope) error {
+	linodeNB, err := ensureNodeBalancer(ctx, clusterScope, logger)
+	if err != nil {
+		logger.Error(err, "failed to ensure nodebalancer")
+		return err
+	}
+	if linodeNB == nil {
+		err = fmt.Errorf("nodeBalancer created was nil")
+		return err
+	}
+	clusterScope.LinodeCluster.Spec.Network.NodeBalancerID = &linodeNB.ID
+
+	// create the configs for the nodeabalancer if not already specified
+	configs, err := ensureNodeBalancerConfigs(ctx, clusterScope, logger)
+	if err != nil {
+		logger.Error(err, "failed to ensure nodebalancer configs")
+		return err
+	}
+
+	clusterScope.LinodeCluster.Spec.Network.ApiserverNodeBalancerConfigID = util.Pointer(configs[0].ID)
+	additionalPorts := make([]infrav1alpha2.LinodeNBPortConfig, 0)
+	for _, config := range configs[1:] {
+		portConfig := infrav1alpha2.LinodeNBPortConfig{
+			Port:                 config.Port,
+			NodeBalancerConfigID: &config.ID,
+		}
+		additionalPorts = append(additionalPorts, portConfig)
+	}
+	clusterScope.LinodeCluster.Spec.Network.AdditionalPorts = additionalPorts
+
+	clusterScope.LinodeCluster.Spec.ControlPlaneEndpoint = clusterv1.APIEndpoint{
+		Host: *linodeNB.IPv4,
+		Port: int32(configs[0].Port),
+	}
+
+	return nil
+}
+
+func HandleDNS(clusterScope *scope.ClusterScope) {
+	clusterSpec := clusterScope.LinodeCluster.Spec
+	clusterMetadata := clusterScope.LinodeCluster.ObjectMeta
+	uniqueID := ""
+	if clusterSpec.Network.DNSUniqueIdentifier != "" {
+		uniqueID = "-" + clusterSpec.Network.DNSUniqueIdentifier
+	}
+	subDomain := clusterMetadata.Name + uniqueID
+
+	if clusterScope.LinodeCluster.Spec.Network.DNSSubDomainOverride != "" {
+		subDomain = clusterScope.LinodeCluster.Spec.Network.DNSSubDomainOverride
+	}
+	dnsHost := subDomain + "." + clusterSpec.Network.DNSRootDomain
+	apiLBPort := DefaultApiserverLBPort
+	if clusterScope.LinodeCluster.Spec.Network.ApiserverLoadBalancerPort != 0 {
+		apiLBPort = clusterScope.LinodeCluster.Spec.Network.ApiserverLoadBalancerPort
+	}
+	clusterScope.LinodeCluster.Spec.ControlPlaneEndpoint = clusterv1.APIEndpoint{
+		Host: dnsHost,
+		Port: int32(apiLBPort),
+	}
+}
+
+// ensureNodeBalancer creates a new NodeBalancer if one doesn't exist or returns the existing NodeBalancer
+func ensureNodeBalancer(ctx context.Context, clusterScope *scope.ClusterScope, logger logr.Logger) (*linodego.NodeBalancer, error) {
 	nbID := clusterScope.LinodeCluster.Spec.Network.NodeBalancerID
 	if nbID != nil && *nbID != 0 {
 		res, err := clusterScope.LinodeClient.GetNodeBalancer(ctx, *nbID)
@@ -44,8 +105,8 @@ func EnsureNodeBalancer(ctx context.Context, clusterScope *scope.ClusterScope, l
 	return clusterScope.LinodeClient.CreateNodeBalancer(ctx, createConfig)
 }
 
-// EnsureNodeBalancerConfigs creates NodeBalancer configs if it does not exist or returns the existing NodeBalancerConfig
-func EnsureNodeBalancerConfigs(
+// ensureNodeBalancerConfigs creates NodeBalancer configs if it does not exist or returns the existing NodeBalancerConfig
+func ensureNodeBalancerConfigs(
 	ctx context.Context,
 	clusterScope *scope.ClusterScope,
 	logger logr.Logger,
@@ -114,7 +175,7 @@ func EnsureNodeBalancerConfigs(
 }
 
 // AddNodesToNB adds backend Nodes on the Node Balancer configuration
-func AddNodesToNB(ctx context.Context, logger logr.Logger, clusterScope *scope.ClusterScope, eachMachine v1alpha2.LinodeMachine) error {
+func AddNodesToNB(ctx context.Context, clusterScope *scope.ClusterScope, eachMachine infrav1alpha2.LinodeMachine) error {
 	apiserverLBPort := DefaultApiserverLBPort
 	if clusterScope.LinodeCluster.Spec.Network.ApiserverLoadBalancerPort != 0 {
 		apiserverLBPort = clusterScope.LinodeCluster.Spec.Network.ApiserverLoadBalancerPort
@@ -135,7 +196,7 @@ func AddNodesToNB(ctx context.Context, logger logr.Logger, clusterScope *scope.C
 	}
 	internalIPFound := false
 	for _, IPs := range eachMachine.Status.Addresses {
-		if IPs.Type != v1beta1.MachineInternalIP || !strings.Contains(IPs.Address, "192.168") {
+		if IPs.Type != clusterv1.MachineInternalIP || !strings.Contains(IPs.Address, "192.168") {
 			continue
 		}
 		internalIPFound = true

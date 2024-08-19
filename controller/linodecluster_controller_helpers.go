@@ -10,10 +10,9 @@ import (
 )
 
 func (r *LinodeClusterReconciler) addMachineToLB(ctx context.Context, clusterScope *scope.ClusterScope) error {
-	logger := logr.FromContextOrDiscard(ctx)
 	if clusterScope.LinodeCluster.Spec.Network.LoadBalancerType != "dns" {
 		for _, eachMachine := range clusterScope.LinodeMachines.Items {
-			if err := services.AddNodesToNB(ctx, logger, clusterScope, eachMachine); err != nil {
+			if err := services.AddNodesToNB(ctx, clusterScope, eachMachine); err != nil {
 				return err
 			}
 		}
