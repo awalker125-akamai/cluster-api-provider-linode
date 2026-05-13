@@ -110,6 +110,14 @@ type LinodeMachineSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
 	PrivateIP *bool `json:"privateIP,omitempty"`
 
+	// swapSize is the size of the swap disk in MB.
+	// If unset, the platform default swap size is used.
+	// Set to 0 to disable creation of a swap disk.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
+	SwapSize *int `json:"swapSize,omitempty"`
+
 	// tags is a list of tags to apply to the Linode instance.
 	// +optional
 	// +listType=set
