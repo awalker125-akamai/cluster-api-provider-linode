@@ -608,6 +608,16 @@ spec:
                 x-kubernetes-validations:
                 - message: Value is immutable
                   rule: self == oldSelf
+              swapSize:
+                description: |-
+                  swapSize is the size of the swap disk in MB.
+                  If unset, the platform default swap size is used.
+                  Set to 0 to disable creation of a swap disk.
+                minimum: 0
+                type: integer
+                x-kubernetes-validations:
+                - message: Value is immutable
+                  rule: self == oldSelf
               providerID:
                 description: providerID is the unique identifier as specified by the
                   cloud provider.

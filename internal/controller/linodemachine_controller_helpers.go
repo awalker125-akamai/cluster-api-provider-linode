@@ -1083,6 +1083,7 @@ func linodeMachineSpecToInstanceCreateConfig(machineSpec infrav1alpha2.LinodeMac
 		FirewallID:          machineSpec.FirewallID,
 		InterfaceGeneration: machineSpec.InterfaceGeneration,
 		DiskEncryption:      linodego.InstanceDiskEncryption(machineSpec.DiskEncryption),
+		SwapSize:            machineSpec.SwapSize,
 	}
 
 	if machineSpec.PrivateIP != nil {

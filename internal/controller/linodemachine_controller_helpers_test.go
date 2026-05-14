@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	b64 "encoding/base64"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"testing"
@@ -67,6 +68,111 @@ func TestLinodeMachineSpecToCreateInstanceConfig(t *testing.T) {
 
 	createConfig := linodeMachineSpecToInstanceCreateConfig(machineSpec, []string{"tag"})
 	assert.NotNil(t, createConfig, "Failed to convert LinodeMachineSpec to InstanceCreateOptions")
+}
+
+func TestLinodeMachineSpecToCreateInstanceConfigSwapSize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		spec     infrav1alpha2.LinodeMachineSpec
+		expected *int
+	}{
+		{
+			name: "unset swap size",
+			spec: infrav1alpha2.LinodeMachineSpec{
+				Region: "us-ord",
+				Type:   "g6-standard-2",
+			},
+			expected: nil,
+		},
+		{
+			name: "swap disabled",
+			spec: infrav1alpha2.LinodeMachineSpec{
+				Region:   "us-ord",
+				Type:     "g6-standard-2",
+				SwapSize: ptr.To(0),
+			},
+			expected: ptr.To(0),
+		},
+		{
+			name: "custom swap size",
+			spec: infrav1alpha2.LinodeMachineSpec{
+				Region:   "us-ord",
+				Type:     "g6-standard-2",
+				SwapSize: ptr.To(512),
+			},
+			expected: ptr.To(512),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			createConfig := linodeMachineSpecToInstanceCreateConfig(tt.spec, nil)
+			require.NotNil(t, createConfig)
+			assert.Equal(t, tt.expected, createConfig.SwapSize)
+		})
+	}
+}
+
+func TestLinodeMachineSpecToCreateInstanceConfigSwapSizeMarshalling(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		spec             infrav1alpha2.LinodeMachineSpec
+		containsSwapSize bool
+		expectedSwapSize string
+	}{
+		{
+			name: "unset swap size omits payload field",
+			spec: infrav1alpha2.LinodeMachineSpec{
+				Region: "us-ord",
+				Type:   "g6-standard-2",
+			},
+			containsSwapSize: false,
+		},
+		{
+			name: "swap disabled marshals zero",
+			spec: infrav1alpha2.LinodeMachineSpec{
+				Region:   "us-ord",
+				Type:     "g6-standard-2",
+				SwapSize: ptr.To(0),
+			},
+			containsSwapSize: true,
+			expectedSwapSize: "\"swap_size\":0",
+		},
+		{
+			name: "custom swap size marshals value",
+			spec: infrav1alpha2.LinodeMachineSpec{
+				Region:   "us-ord",
+				Type:     "g6-standard-2",
+				SwapSize: ptr.To(512),
+			},
+			containsSwapSize: true,
+			expectedSwapSize: "\"swap_size\":512",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			createConfig := linodeMachineSpecToInstanceCreateConfig(tt.spec, nil)
+			require.NotNil(t, createConfig)
+
+			payload, err := json.Marshal(createConfig)
+			require.NoError(t, err)
+
+			if tt.containsSwapSize {
+				assert.Contains(t, string(payload), tt.expectedSwapSize)
+			} else {
+				assert.NotContains(t, string(payload), "\"swap_size\"")
+			}
+		})
+	}
 }
 
 func TestSetUserData(t *testing.T) {

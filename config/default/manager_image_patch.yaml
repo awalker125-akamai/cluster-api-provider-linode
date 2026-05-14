@@ -8,5 +8,5 @@ spec:
   template:
     spec:
       containers:
-        - image: docker.io/linode/cluster-api-provider-linode:main
+        - image: docker.io/anwalker/cluster-api-provider-linode:v0.8.0-395-g703b706
           name: manager
