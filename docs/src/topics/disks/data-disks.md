@@ -11,6 +11,8 @@ There are a couple caveats with specifying disks for a linode instance:
 ```admonish warning
 Currently SDB is being used by a swap disk, replacing this disk with a data disk will slow down linode creation by
 up to 90 seconds. This will be resolved when the disk creation refactor is finished. (See [#766](https://github.com/linode/cluster-api-provider-linode/issues/766))
+
+Setting swapSize to 0 will prevent the swap disk from being created and allow SDB to be used as a data disk.
 ```
 
 ## Specify a data disk
@@ -37,6 +39,28 @@ spec:
           label: etcd_disk
           size: 16Gi
         sdd:
+          label: data_disk
+          size: 10Gi
+```
+
+To remove the default swap disk, set `swapSize` to 0 and specify a data disk for `sdb`:
+```yaml
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+kind: LinodeMachineTemplate
+metadata:
+  name: ${CLUSTER}-control-plane
+spec:
+  template:
+    spec:
+      region: us-ord
+      type: g6-standard-4
+      swapSize: 0
+      dataDisks:
+        sdb:
+          label: etcd_disk
+          size: 16Gi
+        sdc:
           label: data_disk
           size: 10Gi
 ```
