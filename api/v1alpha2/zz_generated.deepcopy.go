@@ -924,6 +924,11 @@ func (in *LinodeMachineSpec) DeepCopyInto(out *LinodeMachineSpec) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.SwapSize != nil {
+		in, out := &in.SwapSize, &out.SwapSize
+		*out = new(int)
+		**out = **in
+	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
 		*out = make([]string, len(*in))
@@ -988,11 +993,6 @@ func (in *LinodeMachineSpec) DeepCopyInto(out *LinodeMachineSpec) {
 	if in.NetworkHelper != nil {
 		in, out := &in.NetworkHelper, &out.NetworkHelper
 		*out = new(bool)
-		**out = **in
-	}
-	if in.SwapSize != nil {
-		in, out := &in.SwapSize, &out.SwapSize
-		*out = new(int)
 		**out = **in
 	}
 }

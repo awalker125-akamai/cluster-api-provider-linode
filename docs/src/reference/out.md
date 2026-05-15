@@ -666,6 +666,7 @@ _Appears in:_
 | `linodeInterfaces` _[LinodeInterfaceCreateOptions](#linodeinterfacecreateoptions) array_ | linodeInterfaces is a list of Linode network interfaces to use for the instance. Requires Linode Interfaces beta opt-in to use. |  |  |
 | `backupsEnabled` _boolean_ | backupsEnabled is a boolean indicating whether backups should be enabled for the instance. |  |  |
 | `privateIP` _boolean_ | privateIP is a boolean indicating whether the instance should have a private IP address. |  |  |
+| `swapSize` _integer_ | swapSize is the size of the swap disk in MB.<br />If unset, the platform default swap size is used.<br />Set to 0 to disable creation of a swap disk. |  | Minimum: 0 <br /> |
 | `tags` _string array_ | tags is a list of tags to apply to the Linode instance. |  |  |
 | `firewallID` _integer_ | firewallID is the id of the cloud firewall to apply to the Linode Instance |  |  |
 | `osDisk` _[InstanceDisk](#instancedisk)_ | osDisk is a configuration for the root disk that includes the OS,<br />if not specified, this defaults to whatever space is not taken up by the DataDisks |  |  |
