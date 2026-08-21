@@ -3026,7 +3026,134 @@ func TestAddNodeToNBWithVPC(t *testing.T) {
 	}
 }
 
-// Add this test function after TestFindSubnet
+func TestAddNodeToNBWithSecondaryVPC(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		clusterScope     *scope.ClusterScope
+		linodeMachine    infrav1alpha2.LinodeMachine
+		expectedError    bool
+		expectedErrorMsg string
+		expectedAddress  string
+		mockSetup        func(*mock.MockLinodeClient, *mock.MockK8sClient)
+	}{
+		{
+			name: "CIDR filter selects primary VPC IP over secondary VPC IP",
+			clusterScope: &scope.ClusterScope{
+				LinodeCluster: &infrav1alpha2.LinodeCluster{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
+					Spec: infrav1alpha2.LinodeClusterSpec{
+						Network: infrav1alpha2.NetworkSpec{
+							EnableVPCBackends:             true,
+							ApiserverNodeBalancerConfigID: ptr.To(222),
+							NodeBalancerID:                ptr.To(111),
+							NodeBalancerBackendIPv4Range:  "10.0.0.0/24",
+						},
+						VPCRef: &corev1.ObjectReference{Name: "test-vpc", Namespace: "default"},
+					},
+				},
+				Cluster: &clusterv1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "test-cluster"}},
+			},
+			linodeMachine: infrav1alpha2.LinodeMachine{
+				Status: infrav1alpha2.LinodeMachineStatus{
+					Addresses: []clusterv1.MachineAddress{
+						{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},  // secondary VPC — must not be selected
+						{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},  // primary VPC — must be selected
+						{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"},
+					},
+				},
+			},
+			expectedAddress: "10.0.0.5:6443",
+			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
+				mockK8sClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+					func(_ context.Context, _ client.ObjectKey, vpc *infrav1alpha2.LinodeVPC, _ ...client.GetOption) error {
+						vpc.Spec.Subnets = []infrav1alpha2.VPCSubnetCreateOptions{
+							{Label: "primary-subnet", SubnetID: 100},
+						}
+						return nil
+					})
+				mockLinodeClient.EXPECT().CreateNodeBalancerNode(
+					gomock.Any(), gomock.Eq(111), gomock.Eq(222), gomock.Any(),
+				).DoAndReturn(func(_ context.Context, _, _ int, opts linodego.NodeBalancerNodeCreateOptions) (*linodego.NodeBalancerNode, error) {
+					require.Equal(t, "10.0.0.5:6443", opts.Address)
+					return &linodego.NodeBalancerNode{ID: 1, Address: opts.Address, Label: opts.Label}, nil
+				})
+			},
+		},
+		{
+			name: "Secondary VPC IP only: not in CIDR, falls back to private IP",
+			clusterScope: &scope.ClusterScope{
+				LinodeCluster: &infrav1alpha2.LinodeCluster{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
+					Spec: infrav1alpha2.LinodeClusterSpec{
+						Network: infrav1alpha2.NetworkSpec{
+							EnableVPCBackends:             true,
+							ApiserverNodeBalancerConfigID: ptr.To(222),
+							NodeBalancerID:                ptr.To(111),
+							NodeBalancerBackendIPv4Range:  "10.0.0.0/24",
+						},
+						VPCRef: &corev1.ObjectReference{Name: "test-vpc", Namespace: "default"},
+					},
+				},
+				Cluster: &clusterv1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "test-cluster"}},
+			},
+			linodeMachine: infrav1alpha2.LinodeMachine{
+				Status: infrav1alpha2.LinodeMachineStatus{
+					Addresses: []clusterv1.MachineAddress{
+						{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},   // secondary VPC only — not in CIDR
+						{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"}, // private fallback
+					},
+				},
+			},
+			expectedAddress: "192.168.128.5:6443",
+			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
+				mockK8sClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+					func(_ context.Context, _ client.ObjectKey, vpc *infrav1alpha2.LinodeVPC, _ ...client.GetOption) error {
+						vpc.Spec.Subnets = []infrav1alpha2.VPCSubnetCreateOptions{
+							{Label: "primary-subnet", SubnetID: 100},
+						}
+						return nil
+					})
+				mockLinodeClient.EXPECT().CreateNodeBalancerNode(
+					gomock.Any(), gomock.Eq(111), gomock.Eq(222), gomock.Any(),
+				).DoAndReturn(func(_ context.Context, _, _ int, opts linodego.NodeBalancerNodeCreateOptions) (*linodego.NodeBalancerNode, error) {
+					require.Equal(t, "192.168.128.5:6443", opts.Address)
+					return &linodego.NodeBalancerNode{ID: 1, Address: opts.Address, Label: opts.Label}, nil
+				})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockLinodeClient := mock.NewMockLinodeClient(ctrl)
+			mockK8sClient := mock.NewMockK8sClient(ctrl)
+			tt.clusterScope.LinodeClient = mockLinodeClient
+			tt.clusterScope.Client = mockK8sClient
+
+			tt.mockSetup(mockLinodeClient, mockK8sClient)
+
+			logger := logr.Discard()
+			nodes := []linodego.NodeBalancerNode{}
+			err := AddNodesToNB(t.Context(), logger, tt.clusterScope, tt.linodeMachine, nodes)
+
+			if tt.expectedError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErrorMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestSelectSubnet(t *testing.T) {
 	t.Parallel()
 

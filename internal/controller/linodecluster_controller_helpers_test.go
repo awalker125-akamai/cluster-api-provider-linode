@@ -323,6 +323,191 @@ func TestGetIPPortCombo(t *testing.T) {
 	}
 }
 
+func TestFindFirstVPCInternalIP(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		addresses   []clusterv1.MachineAddress
+		primaryCIDR string
+		wantIP      string
+		wantOK      bool
+	}{
+		{
+			name: "No CIDR - picks first non-private internal IP",
+			addresses: []clusterv1.MachineAddress{
+				{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"},
+				{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},
+			},
+			primaryCIDR: "",
+			wantIP:      "10.0.0.5",
+			wantOK:      true,
+		},
+		{
+			name: "No CIDR - no non-private internal IP returns false",
+			addresses: []clusterv1.MachineAddress{
+				{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"},
+				{Type: clusterv1.MachineExternalIP, Address: "1.2.3.4"},
+			},
+			primaryCIDR: "",
+			wantIP:      "",
+			wantOK:      false,
+		},
+		{
+			name: "CIDR filter - selects IP within primary CIDR over secondary VPC IP",
+			addresses: []clusterv1.MachineAddress{
+				{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},  // secondary VPC
+				{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},  // primary VPC
+				{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"}, // private
+			},
+			primaryCIDR: "10.0.0.0/24",
+			wantIP:      "10.0.0.5",
+			wantOK:      true,
+		},
+		{
+			name: "CIDR filter - no address in CIDR returns false",
+			addresses: []clusterv1.MachineAddress{
+				{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},
+				{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"},
+			},
+			primaryCIDR: "10.0.0.0/24",
+			wantIP:      "",
+			wantOK:      false,
+		},
+		{
+			name: "Invalid CIDR falls back to heuristic",
+			addresses: []clusterv1.MachineAddress{
+				{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"},
+				{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},
+			},
+			primaryCIDR: "not-a-cidr",
+			wantIP:      "10.0.0.5",
+			wantOK:      true,
+		},
+		{
+			name:        "Empty address list returns false",
+			addresses:   []clusterv1.MachineAddress{},
+			primaryCIDR: "10.0.0.0/24",
+			wantIP:      "",
+			wantOK:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ip, ok := findFirstVPCInternalIP(tt.addresses, tt.primaryCIDR)
+			assert.Equal(t, tt.wantOK, ok)
+			assert.Equal(t, tt.wantIP, ip)
+		})
+	}
+}
+
+func TestGetIPPortComboWithSecondaryVPC(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		clusterScope  *scope.ClusterScope
+		expectedCombo []string
+	}{
+		{
+			name: "Dual-homed machine: CIDR filter picks primary VPC IP, ignores secondary",
+			clusterScope: &scope.ClusterScope{
+				LinodeCluster: &infrav1alpha2.LinodeCluster{
+					Spec: infrav1alpha2.LinodeClusterSpec{
+						Network: infrav1alpha2.NetworkSpec{
+							EnableVPCBackends:            true,
+							NodeBalancerBackendIPv4Range: "10.0.0.0/24",
+						},
+						VPCRef: &corev1.ObjectReference{Name: "test-vpc"},
+					},
+				},
+				LinodeMachines: infrav1alpha2.LinodeMachineList{
+					Items: []infrav1alpha2.LinodeMachine{
+						{
+							Status: infrav1alpha2.LinodeMachineStatus{
+								Addresses: []clusterv1.MachineAddress{
+									{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},  // secondary VPC (eth1)
+									{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},  // primary VPC (eth0)
+									{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"}, // private
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCombo: []string{"10.0.0.5:6443"},
+		},
+		{
+			name: "Dual-homed machine: no CIDR set falls back to first non-private VPC IP",
+			clusterScope: &scope.ClusterScope{
+				LinodeCluster: &infrav1alpha2.LinodeCluster{
+					Spec: infrav1alpha2.LinodeClusterSpec{
+						Network: infrav1alpha2.NetworkSpec{
+							EnableVPCBackends:            true,
+							NodeBalancerBackendIPv4Range: "",
+						},
+						VPCRef: &corev1.ObjectReference{Name: "test-vpc"},
+					},
+				},
+				LinodeMachines: infrav1alpha2.LinodeMachineList{
+					Items: []infrav1alpha2.LinodeMachine{
+						{
+							Status: infrav1alpha2.LinodeMachineStatus{
+								Addresses: []clusterv1.MachineAddress{
+									{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},
+									{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},
+									{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"},
+								},
+							},
+						},
+					},
+				},
+			},
+			// Without a CIDR both VPC IPs qualify; heuristic returns the first non-private one
+			expectedCombo: []string{"10.0.0.5:6443"},
+		},
+		{
+			name: "Dual-homed machine: no primary VPC IP in CIDR falls back to private IP",
+			clusterScope: &scope.ClusterScope{
+				LinodeCluster: &infrav1alpha2.LinodeCluster{
+					Spec: infrav1alpha2.LinodeClusterSpec{
+						Network: infrav1alpha2.NetworkSpec{
+							EnableVPCBackends:            true,
+							NodeBalancerBackendIPv4Range: "10.0.0.0/24",
+						},
+						VPCRef: &corev1.ObjectReference{Name: "test-vpc"},
+					},
+				},
+				LinodeMachines: infrav1alpha2.LinodeMachineList{
+					Items: []infrav1alpha2.LinodeMachine{
+						{
+							Status: infrav1alpha2.LinodeMachineStatus{
+								Addresses: []clusterv1.MachineAddress{
+									{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"}, // secondary VPC only
+									{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCombo: []string{"192.168.128.5:6443"},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := getIPPortCombo(tt.clusterScope)
+			assert.ElementsMatch(t, tt.expectedCombo, result)
+		})
+	}
+}
+
 func TestAddMachineToLB(t *testing.T) {
 	t.Parallel()
 
