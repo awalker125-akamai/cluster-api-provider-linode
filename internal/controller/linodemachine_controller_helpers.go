@@ -165,6 +165,11 @@ func newCreateConfig(ctx context.Context, machineScope *scope.MachineScope, gzip
 		return nil, err
 	}
 
+	// Configure secondary VPC interfaces if needed
+	if err := configureSecondaryVPCInterfaces(ctx, machineScope, createConfig, logger); err != nil {
+		return nil, err
+	}
+
 	// Configure VLAN interface if needed
 	if machineScope.LinodeCluster.Spec.Network.UseVlan {
 		if err := configureVlanInterface(ctx, machineScope, createConfig, logger); err != nil {
@@ -205,6 +210,188 @@ func configureVPCInterface(ctx context.Context, machineScope *scope.MachineScope
 
 	// No VPC configuration found, nothing to do
 	return nil
+}
+
+// configureSecondaryVPCInterfaces appends additional VPC interfaces for each entry in
+// LinodeMachine.Spec.AdditionalVPCs. Secondary interfaces are always appended so the primary VPC
+// interface built by configureVPCInterface remains at index 0 (eth0).
+func configureSecondaryVPCInterfaces(ctx context.Context, machineScope *scope.MachineScope, createConfig *linodego.InstanceCreateOptions, logger logr.Logger) error {
+	if len(machineScope.LinodeMachine.Spec.AdditionalVPCs) == 0 {
+		return nil
+	}
+
+	if machineScope.LinodeCluster.Spec.Network.UseVlan {
+		return errors.New("additionalVPCs cannot be used with useVlan=true")
+	}
+
+	// Resolve primary VPCID so we can detect conflicts.
+	primaryVPCID := 0
+	if machineScope.LinodeMachine.Spec.VPCID != nil {
+		primaryVPCID = *machineScope.LinodeMachine.Spec.VPCID
+	} else if machineScope.LinodeCluster.Spec.VPCID != nil {
+		primaryVPCID = *machineScope.LinodeCluster.Spec.VPCID
+	}
+
+	for i, av := range machineScope.LinodeMachine.Spec.AdditionalVPCs {
+		avLogger := logger.WithValues("secondaryVPCIndex", i)
+
+		if av.VPCID != nil && primaryVPCID != 0 && *av.VPCID == primaryVPCID {
+			return fmt.Errorf("additionalVPCs[%d].vpcID %d conflicts with primary VPC %d", i, *av.VPCID, primaryVPCID)
+		}
+
+		var err error
+		switch {
+		case av.VPCID != nil:
+			err = appendSecondaryVPCInterfaceFromDirectID(ctx, machineScope, createConfig, avLogger, *av.VPCID, av.SubnetName)
+		case av.VPCRef != nil:
+			err = appendSecondaryVPCInterfaceFromReference(ctx, machineScope, createConfig, avLogger, av.VPCRef, av.SubnetName)
+		default:
+			avLogger.Info("AdditionalVPCSpec has neither vpcID nor vpcRef; skipping")
+			continue
+		}
+		if err != nil {
+			avLogger.Error(err, "Failed to configure secondary VPC interface")
+			return err
+		}
+	}
+	return nil
+}
+
+func appendSecondaryVPCInterfaceFromDirectID(ctx context.Context, machineScope *scope.MachineScope, createConfig *linodego.InstanceCreateOptions, logger logr.Logger, vpcID int, subnetName string) error {
+	switch {
+	case createConfig.LinodeInterfaces != nil || (createConfig.LinodeInterfaces == nil && machineScope.LinodeMachine.Spec.InterfaceGeneration == linodego.GenerationLinode):
+		iface, err := buildSecondaryLinodeInterfaceFromDirectID(ctx, machineScope, logger, vpcID, subnetName)
+		if err != nil {
+			return err
+		}
+		createConfig.LinodeInterfaces = append(createConfig.LinodeInterfaces, *iface)
+	default:
+		iface, err := buildSecondaryLegacyInterfaceFromDirectID(ctx, machineScope, logger, vpcID, subnetName)
+		if err != nil {
+			return err
+		}
+		createConfig.Interfaces = append(createConfig.Interfaces, *iface)
+	}
+	return nil
+}
+
+func appendSecondaryVPCInterfaceFromReference(ctx context.Context, machineScope *scope.MachineScope, createConfig *linodego.InstanceCreateOptions, logger logr.Logger, vpcRef *corev1.ObjectReference, subnetName string) error {
+	switch {
+	case createConfig.LinodeInterfaces != nil || (createConfig.LinodeInterfaces == nil && machineScope.LinodeMachine.Spec.InterfaceGeneration == linodego.GenerationLinode):
+		iface, err := buildSecondaryLinodeInterfaceFromReference(ctx, machineScope, logger, vpcRef, subnetName)
+		if err != nil {
+			return err
+		}
+		createConfig.LinodeInterfaces = append(createConfig.LinodeInterfaces, *iface)
+	default:
+		iface, err := buildSecondaryLegacyInterfaceFromReference(ctx, machineScope, logger, vpcRef, subnetName)
+		if err != nil {
+			return err
+		}
+		createConfig.Interfaces = append(createConfig.Interfaces, *iface)
+	}
+	return nil
+}
+
+func buildSecondaryLinodeInterfaceFromDirectID(ctx context.Context, machineScope *scope.MachineScope, logger logr.Logger, vpcID int, subnetName string) (*linodego.LinodeInterfaceCreateOptions, error) {
+	vpc, err := getVPCFromID(ctx, machineScope, logger, vpcID)
+	if err != nil {
+		return nil, err
+	}
+	subnetID, err := selectSubnetIDFromLinodeVPCSubnets(vpc.Subnets, subnetName)
+	if err != nil {
+		return nil, err
+	}
+	return buildSecondaryLinodeVPCInterface(subnetID), nil
+}
+
+func buildSecondaryLinodeInterfaceFromReference(ctx context.Context, machineScope *scope.MachineScope, logger logr.Logger, vpcRef *corev1.ObjectReference, subnetName string) (*linodego.LinodeInterfaceCreateOptions, error) {
+	linodeVPC, err := getVPCFromRef(ctx, machineScope, logger, vpcRef)
+	if err != nil {
+		return nil, err
+	}
+	subnetID, err := selectSubnetIDFromCRDSubnets(linodeVPC.Spec.Subnets, subnetName)
+	if err != nil {
+		return nil, err
+	}
+	return buildSecondaryLinodeVPCInterface(subnetID), nil
+}
+
+func buildSecondaryLegacyInterfaceFromDirectID(ctx context.Context, machineScope *scope.MachineScope, logger logr.Logger, vpcID int, subnetName string) (*linodego.InstanceConfigInterfaceCreateOptions, error) {
+	vpc, err := getVPCFromID(ctx, machineScope, logger, vpcID)
+	if err != nil {
+		return nil, err
+	}
+	subnetID, err := selectSubnetIDFromLinodeVPCSubnets(vpc.Subnets, subnetName)
+	if err != nil {
+		return nil, err
+	}
+	return buildSecondaryLegacyVPCInterface(subnetID), nil
+}
+
+func buildSecondaryLegacyInterfaceFromReference(ctx context.Context, machineScope *scope.MachineScope, logger logr.Logger, vpcRef *corev1.ObjectReference, subnetName string) (*linodego.InstanceConfigInterfaceCreateOptions, error) {
+	linodeVPC, err := getVPCFromRef(ctx, machineScope, logger, vpcRef)
+	if err != nil {
+		return nil, err
+	}
+	subnetID, err := selectSubnetIDFromCRDSubnets(linodeVPC.Spec.Subnets, subnetName)
+	if err != nil {
+		return nil, err
+	}
+	return buildSecondaryLegacyVPCInterface(subnetID), nil
+}
+
+// selectSubnetIDFromLinodeVPCSubnets finds a subnet ID from a Linode API VPC subnet list by label,
+// or returns the first subnet's ID if subnetName is empty.
+func selectSubnetIDFromLinodeVPCSubnets(subnets []linodego.VPCSubnet, subnetName string) (int, error) {
+	if subnetName != "" {
+		for _, s := range subnets {
+			if s.Label == subnetName {
+				return s.ID, nil
+			}
+		}
+		return 0, fmt.Errorf("subnet with label %q not found in VPC", subnetName)
+	}
+	return subnets[0].ID, nil
+}
+
+// selectSubnetIDFromCRDSubnets finds a subnet ID from a LinodeVPC CRD subnet list by label,
+// or returns the first subnet's ID if subnetName is empty.
+func selectSubnetIDFromCRDSubnets(subnets []infrav1alpha2.VPCSubnetCreateOptions, subnetName string) (int, error) {
+	if subnetName != "" {
+		for _, s := range subnets {
+			if s.Label == subnetName {
+				return s.SubnetID, nil
+			}
+		}
+		return 0, fmt.Errorf("subnet with label %q not found in LinodeVPC", subnetName)
+	}
+	return subnets[0].SubnetID, nil
+}
+
+// buildSecondaryLinodeVPCInterface builds a LinodeInterfaceCreateOptions for a secondary VPC.
+// Unlike the primary, it omits Primary=true and NAT1To1Address so it is a plain east-west interface.
+func buildSecondaryLinodeVPCInterface(subnetID int) *linodego.LinodeInterfaceCreateOptions {
+	return &linodego.LinodeInterfaceCreateOptions{
+		VPC: &linodego.VPCInterfaceCreateOptions{
+			SubnetID: subnetID,
+			IPv4: &linodego.VPCInterfaceIPv4CreateOptions{
+				Addresses: []linodego.VPCInterfaceIPv4AddressCreateOptions{{
+					Address: ptr.To("auto"),
+				}},
+			},
+		},
+	}
+}
+
+// buildSecondaryLegacyVPCInterface builds an InstanceConfigInterfaceCreateOptions for a secondary VPC.
+// Unlike the primary, Primary=false and no NAT1To1 is set.
+func buildSecondaryLegacyVPCInterface(subnetID int) *linodego.InstanceConfigInterfaceCreateOptions {
+	return &linodego.InstanceConfigInterfaceCreateOptions{
+		Purpose:  linodego.InterfacePurposeVPC,
+		Primary:  false,
+		SubnetID: &subnetID,
+	}
 }
 
 // addVPCInterfaceFromDirectID handles adding a VPC interface from a direct ID

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -422,15 +423,30 @@ func AddNodesToNB(ctx context.Context, logger logr.Logger, clusterScope *scope.C
 			logger.Error(err, "Failed to fetch Linode Subnet ID")
 			return err
 		}
+		primaryCIDR := clusterScope.LinodeCluster.Spec.Network.NodeBalancerBackendIPv4Range
 		for _, IPs := range linodeMachine.Status.Addresses {
-			// Look for internal IPs that are NOT linode private IPs (likely VPC IPs)
-			if IPs.Type == v1beta2.MachineInternalIP && !util.IsLinodePrivateIP(IPs.Address) {
-				if err := processAndCreateNodeBalancerNodes(ctx, IPs.Address, clusterScope, nodeBalancerNodes, subnetID); err != nil {
-					logger.Error(err, "Failed to process and create NB nodes")
-					return err
-				}
-				return nil // Return early if we found and used a VPC IP
+			if IPs.Type != v1beta2.MachineInternalIP {
+				continue
 			}
+			// When a primary CIDR is configured, use it as a positive filter so that secondary
+			// VPC IPs on the same machine are not accidentally selected as NodeBalancer backends.
+			if primaryCIDR != "" {
+				_, cidr, err := net.ParseCIDR(primaryCIDR)
+				if err == nil {
+					ip := net.ParseIP(IPs.Address)
+					if ip == nil || !cidr.Contains(ip) {
+						continue
+					}
+				}
+			} else if util.IsLinodePrivateIP(IPs.Address) {
+				// Fallback heuristic: skip Linode private IPs (192.168.*), take first VPC IP.
+				continue
+			}
+			if err := processAndCreateNodeBalancerNodes(ctx, IPs.Address, clusterScope, nodeBalancerNodes, subnetID); err != nil {
+				logger.Error(err, "Failed to process and create NB nodes")
+				return err
+			}
+			return nil // Return early if we found and used a VPC IP
 		}
 	}
 

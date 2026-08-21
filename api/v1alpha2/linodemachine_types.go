@@ -170,6 +170,18 @@ type LinodeMachineSpec struct {
 	// +optional
 	VPCID *int `json:"vpcID,omitempty"`
 
+	// additionalVPCs is a list of additional VPC interfaces to attach to this machine, appended after
+	// the primary VPC interface (eth0). The first entry becomes eth1, the second eth2, and so on.
+	// Intended for workloads (e.g. RDMA RoCEv2) that require a dedicated east-west fabric network
+	// separate from the primary workload VPC.
+	// Cannot be used when useVlan is true on the cluster.
+	// Note: when enableVPCBackends and additionalVPCs are both in use, nodeBalancerBackendIPv4Range
+	// must be set on the cluster so that the NodeBalancer backend IP selection is scoped to the primary VPC.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
+	// +listType=atomic
+	AdditionalVPCs []AdditionalVPCSpec `json:"additionalVPCs,omitempty"`
+
 	// ipv6Options defines the IPv6 options for the instance.
 	// If not specified, IPv6 ranges won't be allocated to instance.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
@@ -530,6 +542,28 @@ type VLANInterface struct {
 	// +optional
 	//nolint:kubeapilinter  // to maintain backwards compatibility
 	IPAMAddressLegacy *string `json:"ipam_address,omitempty"`
+}
+
+// AdditionalVPCSpec defines a secondary (or further) VPC interface attachment for a Linode instance.
+// Exactly one of vpcID or vpcRef must be set.
+//
+// +kubebuilder:validation:XValidation:rule="!(has(self.vpcID) && has(self.vpcRef))",message="vpcID and vpcRef are mutually exclusive; specify only one"
+type AdditionalVPCSpec struct {
+	// vpcID is the ID of an existing VPC in Linode. Takes the unmanaged-VPC path.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
+	// +optional
+	VPCID *int `json:"vpcID,omitempty"`
+
+	// vpcRef is a reference to a LinodeVPC resource. Takes the managed-VPC path.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
+	// +optional
+	VPCRef *corev1.ObjectReference `json:"vpcRef,omitempty"`
+
+	// subnetName is the label of the subnet within the VPC to attach.
+	// If omitted, the first subnet in the VPC is used.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
+	// +optional
+	SubnetName string `json:"subnetName,omitempty"`
 }
 
 // VPCIPv4 defines VPC IPV4 settings

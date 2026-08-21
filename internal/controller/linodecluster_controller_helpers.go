@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net"
 	"slices"
 
 	"github.com/go-logr/logr"
@@ -94,7 +95,8 @@ func getIPPortCombo(cscope *scope.ClusterScope) (ipPortComboList []string) {
 		var selectedIP string
 
 		if useVPCIPs {
-			if ip, ok := findFirstVPCInternalIP(eachMachine.Status.Addresses); ok {
+			primaryCIDR := cscope.LinodeCluster.Spec.Network.NodeBalancerBackendIPv4Range
+			if ip, ok := findFirstVPCInternalIP(eachMachine.Status.Addresses, primaryCIDR); ok {
 				selectedIP = ip
 			}
 		}
@@ -113,8 +115,25 @@ func getIPPortCombo(cscope *scope.ClusterScope) (ipPortComboList []string) {
 	return ipPortComboList
 }
 
-// findFirstVPCInternalIP returns the first internal IP that is not in Linode's private 192.168.* range.
-func findFirstVPCInternalIP(addresses []clusterv1.MachineAddress) (string, bool) {
+// findFirstVPCInternalIP returns the first internal IP that belongs to the primary VPC.
+// When primaryCIDR is set it is used as a positive CIDR filter so that secondary VPC IPs on
+// the same machine are not accidentally selected. When primaryCIDR is empty the function falls
+// back to the heuristic of picking the first non-Linode-private internal IP.
+func findFirstVPCInternalIP(addresses []clusterv1.MachineAddress, primaryCIDR string) (string, bool) {
+	if primaryCIDR != "" {
+		_, cidr, err := net.ParseCIDR(primaryCIDR)
+		if err == nil {
+			for _, addr := range addresses {
+				if addr.Type == clusterv1.MachineInternalIP {
+					if ip := net.ParseIP(addr.Address); ip != nil && cidr.Contains(ip) {
+						return addr.Address, true
+					}
+				}
+			}
+			return "", false
+		}
+		// If the CIDR fails to parse fall through to the heuristic below.
+	}
 	for _, addr := range addresses {
 		if addr.Type == clusterv1.MachineInternalIP && !util.IsLinodePrivateIP(addr.Address) {
 			return addr.Address, true
