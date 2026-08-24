@@ -66,22 +66,17 @@ spec:
                           description: |-
                             AdditionalVPCSpec defines a secondary (or further) VPC interface attachment for a Linode instance.
                             Exactly one of vpcID or vpcRef must be set.
+                            The entire additionalVPCs list is immutable once set (enforced at the list level).
                           properties:
                             subnetName:
                               description: |-
                                 subnetName is the label of the subnet within the VPC to attach.
                                 If omitted, the first subnet in the VPC is used.
                               type: string
-                              x-kubernetes-validations:
-                              - message: Value is immutable
-                                rule: self == oldSelf
                             vpcID:
                               description: vpcID is the ID of an existing VPC in Linode.
                                 Takes the unmanaged-VPC path.
                               type: integer
-                              x-kubernetes-validations:
-                              - message: Value is immutable
-                                rule: self == oldSelf
                             vpcRef:
                               description: vpcRef is a reference to a LinodeVPC resource.
                                 Takes the managed-VPC path.
@@ -126,9 +121,6 @@ spec:
                                   type: string
                               type: object
                               x-kubernetes-map-type: atomic
-                              x-kubernetes-validations:
-                              - message: Value is immutable
-                                rule: self == oldSelf
                           type: object
                           x-kubernetes-validations:
                           - message: vpcID and vpcRef are mutually exclusive; specify

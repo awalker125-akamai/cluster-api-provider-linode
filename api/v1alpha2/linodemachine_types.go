@@ -546,22 +546,20 @@ type VLANInterface struct {
 
 // AdditionalVPCSpec defines a secondary (or further) VPC interface attachment for a Linode instance.
 // Exactly one of vpcID or vpcRef must be set.
+// The entire additionalVPCs list is immutable once set (enforced at the list level).
 //
 // +kubebuilder:validation:XValidation:rule="!(has(self.vpcID) && has(self.vpcRef))",message="vpcID and vpcRef are mutually exclusive; specify only one"
 type AdditionalVPCSpec struct {
 	// vpcID is the ID of an existing VPC in Linode. Takes the unmanaged-VPC path.
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
 	// +optional
 	VPCID *int `json:"vpcID,omitempty"`
 
 	// vpcRef is a reference to a LinodeVPC resource. Takes the managed-VPC path.
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
 	// +optional
 	VPCRef *corev1.ObjectReference `json:"vpcRef,omitempty"`
 
 	// subnetName is the label of the subnet within the VPC to attach.
 	// If omitted, the first subnet in the VPC is used.
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
 	// +optional
 	SubnetName string `json:"subnetName,omitempty"`
 }
