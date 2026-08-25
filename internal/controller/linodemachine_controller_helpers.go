@@ -264,6 +264,10 @@ func appendSecondaryVPCInterfaceFromDirectID(ctx context.Context, machineScope *
 		if err != nil {
 			return err
 		}
+		// Inherit interface-level firewall behavior (including -1 opt-out) from existing interfaces.
+		if iface.FirewallID == nil {
+			iface.FirewallID = inheritedInterfaceFirewallID(createConfig.LinodeInterfaces)
+		}
 		createConfig.LinodeInterfaces = append(createConfig.LinodeInterfaces, *iface)
 	default:
 		iface, err := buildSecondaryLegacyInterfaceFromDirectID(ctx, machineScope, logger, vpcID, subnetName)
@@ -281,6 +285,10 @@ func appendSecondaryVPCInterfaceFromReference(ctx context.Context, machineScope 
 		iface, err := buildSecondaryLinodeInterfaceFromReference(ctx, machineScope, logger, vpcRef, subnetName)
 		if err != nil {
 			return err
+		}
+		// Inherit interface-level firewall behavior (including -1 opt-out) from existing interfaces.
+		if iface.FirewallID == nil {
+			iface.FirewallID = inheritedInterfaceFirewallID(createConfig.LinodeInterfaces)
 		}
 		createConfig.LinodeInterfaces = append(createConfig.LinodeInterfaces, *iface)
 	default:
@@ -382,6 +390,17 @@ func buildSecondaryLinodeVPCInterface(subnetID int) *linodego.LinodeInterfaceCre
 			},
 		},
 	}
+}
+
+func inheritedInterfaceFirewallID(linodeInterfaces []linodego.LinodeInterfaceCreateOptions) *int {
+	for _, iface := range linodeInterfaces {
+		if iface.FirewallID != nil {
+			fwID := *iface.FirewallID
+			return ptr.To(fwID)
+		}
+	}
+
+	return nil
 }
 
 // buildSecondaryLegacyVPCInterface builds an InstanceConfigInterfaceCreateOptions for a secondary VPC.
@@ -895,6 +914,7 @@ func getVPCLinodeInterfaceConfig(ctx context.Context, machineScope *scope.Machin
 
 	// Create a new VPC interface
 	vpcIntfCreateOpts := &linodego.LinodeInterfaceCreateOptions{
+		FirewallID: inheritedInterfaceFirewallID(linodeInterfaces),
 		VPC: &linodego.VPCInterfaceCreateOptions{
 			SubnetID: subnetID,
 			IPv4: &linodego.VPCInterfaceIPv4CreateOptions{
@@ -980,6 +1000,7 @@ func getVPCLinodeInterfaceConfigFromDirectID(ctx context.Context, machineScope *
 
 	// Create a new VPC interface
 	vpcIntfCreateOpts := &linodego.LinodeInterfaceCreateOptions{
+		FirewallID: inheritedInterfaceFirewallID(linodeInterfaces),
 		VPC: &linodego.VPCInterfaceCreateOptions{
 			SubnetID: subnetID,
 			IPv4: &linodego.VPCInterfaceIPv4CreateOptions{

@@ -897,6 +897,7 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 		expectErrMsg          string
 		expectLinodeInterface bool
 		expectSubnetID        int
+		expectFirewallID      *int
 	}{
 		{
 			name:             "Success - Valid VPC with subnets, no subnet name",
@@ -973,6 +974,33 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 			expectErr:             false,
 			expectLinodeInterface: true,
 			expectSubnetID:        789, // Matching subnet ID
+		},
+		{
+			name:  "Success - Inherits firewallID from existing interface",
+			vpcID: 123,
+			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
+				{
+					FirewallID: ptr.To(-1),
+					Public: &linodego.PublicInterfaceCreateOptions{
+						IPv4: &linodego.PublicInterfaceIPv4CreateOptions{},
+					},
+				},
+			},
+			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
+				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
+					ID: 123,
+					Subnets: []linodego.VPCSubnet{
+						{
+							ID:    456,
+							Label: "subnet-1",
+						},
+					},
+				}, nil)
+			},
+			expectErr:             false,
+			expectLinodeInterface: true,
+			expectSubnetID:        456,
+			expectFirewallID:      ptr.To(-1),
 		},
 		{
 			name:             "Success - VPC interface already exists",
@@ -1084,6 +1112,12 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 
 			// Check expectations
 			validateInterfaceExpectations(t, err, nil, linodeIface, tc.expectErr, tc.expectErrMsg, false, tc.expectLinodeInterface, tc.expectSubnetID)
+
+			if !tc.expectErr && tc.expectLinodeInterface && tc.expectFirewallID != nil {
+				require.NotNil(t, linodeIface)
+				require.NotNil(t, linodeIface.FirewallID)
+				require.Equal(t, *tc.expectFirewallID, *linodeIface.FirewallID)
+			}
 
 			// Additional check for interface updates
 			if !tc.expectErr && !tc.expectLinodeInterface && len(tc.linodeInterfaces) > 0 && tc.linodeInterfaces[0].VPC != nil {
@@ -1893,6 +1927,7 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 		expectErrMsg          string
 		expectLinodeInterface bool
 		expectSubnetID        int
+		expectFirewallID      *int
 	}{
 		{
 			name: "Success - Finding VPC with default namespace",
@@ -1982,6 +2017,40 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 			expectErr:             false,
 			expectLinodeInterface: true,
 			expectSubnetID:        789,
+		},
+		{
+			name: "Success - Inherits firewallID from existing interface",
+			vpcRef: &corev1.ObjectReference{
+				Name: "test-vpc",
+			},
+			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
+				{
+					FirewallID: ptr.To(-1),
+					Public: &linodego.PublicInterfaceCreateOptions{
+						IPv4: &linodego.PublicInterfaceIPv4CreateOptions{},
+					},
+				},
+			},
+			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
+				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
+					Name:      "test-vpc",
+					Namespace: "default",
+				}, gomock.Any()).DoAndReturn(func(_ context.Context, _ client.ObjectKey, vpc *infrav1alpha2.LinodeVPC, _ ...client.GetOption) error {
+					vpc.Status.Ready = true
+					vpc.Spec.VPCID = ptr.To(123)
+					vpc.Spec.Subnets = []infrav1alpha2.VPCSubnetCreateOptions{
+						{
+							SubnetID: 456,
+							Label:    "subnet-1",
+						},
+					}
+					return nil
+				})
+			},
+			expectErr:             false,
+			expectLinodeInterface: true,
+			expectSubnetID:        456,
+			expectFirewallID:      ptr.To(-1),
 		},
 		{
 			name: "Success - VPC interface already exists",
@@ -2151,6 +2220,12 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 
 			// Check expectations
 			validateInterfaceExpectations(t, err, nil, linodeIface, tc.expectErr, tc.expectErrMsg, false, tc.expectLinodeInterface, tc.expectSubnetID)
+
+			if !tc.expectErr && tc.expectLinodeInterface && tc.expectFirewallID != nil {
+				require.NotNil(t, linodeIface)
+				require.NotNil(t, linodeIface.FirewallID)
+				require.Equal(t, *tc.expectFirewallID, *linodeIface.FirewallID)
+			}
 
 			// Additional check for interface updates
 			if !tc.expectErr && !tc.expectLinodeInterface && len(tc.linodeInterfaces) > 0 && tc.linodeInterfaces[0].VPC != nil {
@@ -2744,9 +2819,9 @@ func TestConfigureSecondaryVPCInterfaces(t *testing.T) {
 	t.Parallel()
 
 	const (
-		primaryVPCID   = 100
-		secondaryVPCID = 200
-		primarySubnet  = 10
+		primaryVPCID    = 100
+		secondaryVPCID  = 200
+		primarySubnet   = 10
 		secondarySubnet = 20
 	)
 

@@ -5,6 +5,15 @@ When a `LinodeMachineTemplate` uses `linodeInterfaces`, users cannot currently s
 
 This creates friction in declarative workflows, and it conflicts with common CAPL usage where users prefer object references (`firewallRef`) over hard-coded IDs.
 
+## Current Temporary Behavior (Implemented)
+To unblock current workflows before `firewallRef` support is added, CAPL now inherits interface-level firewall settings from existing `linodeInterfaces` entries when it auto-generates VPC interfaces.
+
+What this means in practice:
+- If a user sets `firewallID: -1` on their declared `linodeInterfaces` entry, generated VPC interfaces inherit `-1` too.
+- This avoids API failures that require an explicit default/interface firewall decision.
+
+This is an interim compatibility behavior and may be removed or simplified once native `firewallRef` support exists at interface level.
+
 ## Goals
 - Allow interface-level firewall attachment through Kubernetes references.
 - Keep existing `firewallID` behavior unchanged.
@@ -101,6 +110,13 @@ Scenarios:
 3. Add webhook validation + tests.
 4. Add docs and example template updates.
 5. Ship behind release notes callout.
+
+## Cleanup Considerations After `firewallRef`
+When interface-level `firewallRef` is implemented, revisit the temporary inheritance behavior and decide whether to:
+- keep inheritance as a convenience default, or
+- remove inheritance and require explicit per-interface intent (`firewallID` or `firewallRef`).
+
+Document the final decision in the release notes to avoid ambiguous firewall behavior for generated interfaces.
 
 ## Documentation Updates
 - `docs/src/topics/firewalling.md`
