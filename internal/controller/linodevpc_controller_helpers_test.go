@@ -230,6 +230,47 @@ func Test_linodeVPCSpecToVPCCreateConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "rdma vpc type is passed through",
+			args: args{
+				vpcSpec: infrav1alpha2.LinodeVPCSpec{
+					Description: "rdma vpc",
+					Region:      "us-ord",
+					VPCType:     linodego.VPCTypeRDMA,
+					Subnets: []infrav1alpha2.VPCSubnetCreateOptions{
+						{Label: "rdma-subnet"},
+					},
+				},
+			},
+			want: &linodego.VPCCreateOptions{
+				Description: "rdma vpc",
+				Region:      "us-ord",
+				VPCType:     ptr.To(linodego.VPCTypeRDMA),
+				Subnets: []linodego.VPCSubnetCreateOptions{
+					{Label: "rdma-subnet", IPv6: []linodego.VPCSubnetCreateOptionsIPv6{}},
+				},
+				IPv6: []linodego.VPCCreateOptionsIPv6{},
+			},
+		},
+		{
+			name: "empty vpc type is omitted",
+			args: args{
+				vpcSpec: infrav1alpha2.LinodeVPCSpec{
+					Description: "regular vpc",
+					Region:      "us-ord",
+					Subnets:     []infrav1alpha2.VPCSubnetCreateOptions{{Label: "subnet"}},
+				},
+			},
+			want: &linodego.VPCCreateOptions{
+				Description: "regular vpc",
+				Region:      "us-ord",
+				VPCType:     nil,
+				Subnets: []linodego.VPCSubnetCreateOptions{
+					{Label: "subnet", IPv6: []linodego.VPCSubnetCreateOptionsIPv6{}},
+				},
+				IPv6: []linodego.VPCCreateOptionsIPv6{},
+			},
+		},
+		{
 			name: "ipv6 ranges with AllocationClass and AllocationClassLegacy",
 			args: args{
 				vpcSpec: infrav1alpha2.LinodeVPCSpec{

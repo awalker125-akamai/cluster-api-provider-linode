@@ -221,6 +221,18 @@ spec:
               vpcID:
                 description: vpcID is the ID of the VPC.
                 type: integer
+              vpcType:
+                description: |-
+                  vpcType is the type of VPC to create.
+                  Use "rdma" to create a GPUDirect RDMA VPC for high-performance east-west GPU workloads.
+                  If not specified, a standard VPC is created.
+                enum:
+                - regular
+                - rdma
+                type: string
+                x-kubernetes-validations:
+                - message: Value is immutable
+                  rule: self == oldSelf
             required:
             - region
             type: object

@@ -79,6 +79,14 @@ type LinodeVPCSpec struct {
 	// +listType=atomic
 	Subnets []VPCSubnetCreateOptions `json:"subnets,omitzero"`
 
+	// vpcType is the type of VPC to create.
+	// Use "rdma" to create a GPUDirect RDMA VPC for high-performance east-west GPU workloads.
+	// If not specified, a standard VPC is created.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
+	// +kubebuilder:validation:Enum=regular;rdma
+	// +optional
+	VPCType linodego.VPCType `json:"vpcType,omitempty"`
+
 	// retain allows you to keep the VPC after the LinodeVPC object is deleted.
 	// This is useful if you want to use an existing VPC that was not created by this controller.
 	// If set to true, the controller will not delete the VPC resource in Linode.

@@ -223,6 +223,11 @@ func linodeVPCSpecToVPCCreateConfig(vpcSpec infrav1alpha2.LinodeVPCSpec) *linode
 		Subnets:     subnets,
 		IPv6:        vpcIPv6,
 	}
+
+	if vpcSpec.VPCType != "" {
+		vpcType := vpcSpec.VPCType
+		createOpts.VPCType = &vpcType
+	}
 	if len(vpcSpec.IPv4Range) > 0 {
 		vpcIPv4 := make([]linodego.VPCCreateOptionsIPv4, len(vpcSpec.IPv4Range))
 		for idx, ipv4 := range vpcSpec.IPv4Range {
