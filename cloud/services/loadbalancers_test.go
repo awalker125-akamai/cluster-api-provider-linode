@@ -3039,7 +3039,7 @@ func TestAddNodeToNBWithSecondaryVPC(t *testing.T) {
 		mockSetup        func(*mock.MockLinodeClient, *mock.MockK8sClient)
 	}{
 		{
-			name: "CIDR filter selects primary VPC IP over secondary VPC IP",
+			name: "Primary VPC subnet CIDR selects primary VPC IP over secondary VPC IP",
 			clusterScope: &scope.ClusterScope{
 				LinodeCluster: &infrav1alpha2.LinodeCluster{
 					ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
@@ -3058,8 +3058,8 @@ func TestAddNodeToNBWithSecondaryVPC(t *testing.T) {
 			linodeMachine: infrav1alpha2.LinodeMachine{
 				Status: infrav1alpha2.LinodeMachineStatus{
 					Addresses: []clusterv1.MachineAddress{
-						{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},  // secondary VPC — must not be selected
-						{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},  // primary VPC — must be selected
+						{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"}, // secondary VPC — must not be selected
+						{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"}, // primary VPC — must be selected
 						{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"},
 					},
 				},
@@ -3069,7 +3069,7 @@ func TestAddNodeToNBWithSecondaryVPC(t *testing.T) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 					func(_ context.Context, _ client.ObjectKey, vpc *infrav1alpha2.LinodeVPC, _ ...client.GetOption) error {
 						vpc.Spec.Subnets = []infrav1alpha2.VPCSubnetCreateOptions{
-							{Label: "primary-subnet", SubnetID: 100},
+							{Label: "primary-subnet", SubnetID: 100, IPv4: "10.0.0.0/24"},
 						}
 						return nil
 					})
@@ -3082,7 +3082,7 @@ func TestAddNodeToNBWithSecondaryVPC(t *testing.T) {
 			},
 		},
 		{
-			name: "Secondary VPC IP only: not in CIDR, falls back to private IP",
+			name: "Secondary VPC IP only: not in primary VPC subnet CIDR, falls back to private IP",
 			clusterScope: &scope.ClusterScope{
 				LinodeCluster: &infrav1alpha2.LinodeCluster{
 					ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
@@ -3101,7 +3101,7 @@ func TestAddNodeToNBWithSecondaryVPC(t *testing.T) {
 			linodeMachine: infrav1alpha2.LinodeMachine{
 				Status: infrav1alpha2.LinodeMachineStatus{
 					Addresses: []clusterv1.MachineAddress{
-						{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},   // secondary VPC only — not in CIDR
+						{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},      // secondary VPC only — not in CIDR
 						{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"}, // private fallback
 					},
 				},
@@ -3111,7 +3111,7 @@ func TestAddNodeToNBWithSecondaryVPC(t *testing.T) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 					func(_ context.Context, _ client.ObjectKey, vpc *infrav1alpha2.LinodeVPC, _ ...client.GetOption) error {
 						vpc.Spec.Subnets = []infrav1alpha2.VPCSubnetCreateOptions{
-							{Label: "primary-subnet", SubnetID: 100},
+							{Label: "primary-subnet", SubnetID: 100, IPv4: "10.0.0.0/24"},
 						}
 						return nil
 					})

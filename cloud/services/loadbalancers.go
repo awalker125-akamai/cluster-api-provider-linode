@@ -416,47 +416,77 @@ func AddNodesToNB(ctx context.Context, logger logr.Logger, clusterScope *scope.C
 		return errors.New("nil NodeBalancer Config ID")
 	}
 
+	logger.Info("AddNodesToNB start",
+		"machine", linodeMachine.Name,
+		"enableVPCBackends", clusterScope.LinodeCluster.Spec.Network.EnableVPCBackends,
+		"hasVPCRef", clusterScope.LinodeCluster.Spec.VPCRef != nil,
+		"hasVPCID", clusterScope.LinodeCluster.Spec.VPCID != nil,
+		"nodeBalancerBackendIPv4Range", clusterScope.LinodeCluster.Spec.Network.NodeBalancerBackendIPv4Range,
+	)
+
 	subnetID := 0
 	if ShouldUseVPC(clusterScope) {
-		subnetID, err := getSubnetID(ctx, clusterScope, logger)
+		logger.Info("AddNodesToNB VPC backend path enabled", "machine", linodeMachine.Name)
+		subnetID, primaryCIDR, err := getSubnetIDAndCIDR(ctx, clusterScope, logger)
 		if err != nil {
 			logger.Error(err, "Failed to fetch Linode Subnet ID")
 			return err
 		}
-		primaryCIDR := clusterScope.LinodeCluster.Spec.Network.NodeBalancerBackendIPv4Range
+		logger.Info("AddNodesToNB resolved VPC subnet", "machine", linodeMachine.Name, "subnetID", subnetID, "primaryCIDR", primaryCIDR)
+		if primaryCIDR != "" {
+			if _, _, err := net.ParseCIDR(primaryCIDR); err != nil {
+				logger.Info("AddNodesToNB primary CIDR parse failed; heuristic fallback will be used", "machine", linodeMachine.Name, "primaryCIDR", primaryCIDR, "parseError", err.Error())
+			}
+		}
 		for _, IPs := range linodeMachine.Status.Addresses {
+			logger.Info("AddNodesToNB evaluating machine address",
+				"machine", linodeMachine.Name,
+				"address", IPs.Address,
+				"type", IPs.Type,
+				"isLinodePrivate", util.IsLinodePrivateIP(IPs.Address),
+			)
 			if IPs.Type != v1beta2.MachineInternalIP {
+				logger.Info("AddNodesToNB skipping non-internal address", "machine", linodeMachine.Name, "address", IPs.Address, "type", IPs.Type)
 				continue
 			}
-			// When a primary CIDR is configured, use it as a positive filter so that secondary
+			// When a primary subnet CIDR is available, use it as a positive filter so that secondary
 			// VPC IPs on the same machine are not accidentally selected as NodeBalancer backends.
 			if primaryCIDR != "" {
 				_, cidr, err := net.ParseCIDR(primaryCIDR)
 				if err == nil {
 					ip := net.ParseIP(IPs.Address)
 					if ip == nil || !cidr.Contains(ip) {
+						logger.Info("AddNodesToNB skipping internal address outside primary VPC subnet CIDR", "machine", linodeMachine.Name, "address", IPs.Address, "primaryCIDR", primaryCIDR)
 						continue
 					}
+					logger.Info("AddNodesToNB selected VPC backend address by CIDR match", "machine", linodeMachine.Name, "address", IPs.Address, "primaryCIDR", primaryCIDR)
 				}
 			} else if util.IsLinodePrivateIP(IPs.Address) {
 				// Fallback heuristic: skip Linode private IPs (192.168.*), take first VPC IP.
+				logger.Info("AddNodesToNB skipping private address while searching for VPC backend", "machine", linodeMachine.Name, "address", IPs.Address)
 				continue
+			} else {
+				logger.Info("AddNodesToNB selected first non-private internal address as VPC backend", "machine", linodeMachine.Name, "address", IPs.Address)
 			}
 			if err := processAndCreateNodeBalancerNodes(ctx, IPs.Address, clusterScope, nodeBalancerNodes, subnetID); err != nil {
 				logger.Error(err, "Failed to process and create NB nodes")
 				return err
 			}
+			logger.Info("AddNodesToNB added machine as VPC backend", "machine", linodeMachine.Name, "address", IPs.Address)
 			return nil // Return early if we found and used a VPC IP
 		}
+		logger.Info("AddNodesToNB no usable VPC backend address found; falling back to private IP path", "machine", linodeMachine.Name)
 	}
 
 	// We will use private IP address as the default
 	internalIPFound := false
 	for _, IPs := range linodeMachine.Status.Addresses {
 		if IPs.Type != v1beta2.MachineInternalIP || !util.IsLinodePrivateIP(IPs.Address) {
+			logger.Info("AddNodesToNB skipping address in private fallback path", "machine", linodeMachine.Name, "address", IPs.Address, "type", IPs.Type, "isLinodePrivate", util.IsLinodePrivateIP(IPs.Address))
 			continue
 		}
 		internalIPFound = true
+		logger.Info("AddNodesToNB selected private fallback address", "machine", linodeMachine.Name, "address", IPs.Address)
 
 		err := processAndCreateNodeBalancerNodes(ctx, IPs.Address, clusterScope, nodeBalancerNodes, subnetID)
 		if err != nil {
@@ -466,10 +496,96 @@ func AddNodesToNB(ctx context.Context, logger logr.Logger, clusterScope *scope.C
 		break // Use the first matching IP
 	}
 	if !internalIPFound {
+		logger.Info("AddNodesToNB no private fallback address found", "machine", linodeMachine.Name)
 		return errors.New("no private IP address")
 	}
 
+	logger.Info("AddNodesToNB added machine as private backend", "machine", linodeMachine.Name)
 	return nil
+}
+
+// getSubnetIDAndCIDR returns both subnet ID and subnet IPv4 CIDR from the primary VPC
+// selected by VPCID or VPCRef and optional subnetName.
+func getSubnetIDAndCIDR(ctx context.Context, clusterScope *scope.ClusterScope, logger logr.Logger) (int, string, error) {
+	subnetName := clusterScope.LinodeCluster.Spec.Network.SubnetName
+
+	if clusterScope.LinodeCluster.Spec.VPCID != nil {
+		vpcID := *clusterScope.LinodeCluster.Spec.VPCID
+		vpc, err := clusterScope.LinodeClient.GetVPC(ctx, vpcID)
+		if err != nil {
+			logger.Error(err, "Failed to fetch VPC from Linode API", "vpcID", vpcID)
+			return 0, "", err
+		}
+
+		if len(vpc.Subnets) == 0 {
+			return 0, "", errors.New("no subnets found in VPC")
+		}
+
+		if subnetName != "" {
+			for _, subnet := range vpc.Subnets {
+				if subnet.Label == subnetName {
+					if subnet.ID == 0 {
+						return 0, "", errors.New("invalid subnet ID: selected subnet ID is 0")
+					}
+					return subnet.ID, subnet.IPv4, nil
+				}
+			}
+			return 0, "", fmt.Errorf("subnet with label %s not found in VPC", subnetName)
+		}
+
+		if vpc.Subnets[0].ID == 0 {
+			return 0, "", errors.New("invalid subnet ID: selected subnet ID is 0")
+		}
+		return vpc.Subnets[0].ID, vpc.Subnets[0].IPv4, nil
+	}
+
+	if clusterScope.LinodeCluster.Spec.VPCRef == nil {
+		return 0, "", errors.New("neither VPCID nor VPCRef is specified in LinodeCluster")
+	}
+
+	name := clusterScope.LinodeCluster.Spec.VPCRef.Name
+	namespace := clusterScope.LinodeCluster.Spec.VPCRef.Namespace
+	if namespace == "" {
+		namespace = clusterScope.LinodeCluster.Namespace
+	}
+
+	if name == "" {
+		return 0, "", errors.New("VPCRef name is not specified in LinodeCluster")
+	}
+
+	linodeVPC := &v1alpha2.LinodeVPC{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+	}
+
+	objectKey := client.ObjectKeyFromObject(linodeVPC)
+	if err := clusterScope.Client.Get(ctx, objectKey, linodeVPC); err != nil {
+		logger.Error(err, "Failed to fetch LinodeVPC", "name", name, "namespace", namespace)
+		return 0, "", fmt.Errorf("failed to fetch LinodeVPC %s/%s: %w", namespace, name, err)
+	}
+
+	if len(linodeVPC.Spec.Subnets) == 0 {
+		return 0, "", errors.New("no subnets found in LinodeVPC")
+	}
+
+	if subnetName != "" {
+		for _, subnet := range linodeVPC.Spec.Subnets {
+			if subnet.Label == subnetName {
+				if subnet.SubnetID == 0 {
+					return 0, "", errors.New("invalid subnet ID: selected subnet ID is 0")
+				}
+				return subnet.SubnetID, subnet.IPv4, nil
+			}
+		}
+		return 0, "", fmt.Errorf("subnet with label %s not found in VPC", subnetName)
+	}
+
+	if linodeVPC.Spec.Subnets[0].SubnetID == 0 {
+		return 0, "", errors.New("invalid subnet ID: selected subnet ID is 0")
+	}
+	return linodeVPC.Spec.Subnets[0].SubnetID, linodeVPC.Spec.Subnets[0].IPv4, nil
 }
 
 // DeleteNodesFromNB removes backend Nodes from the Node Balancer configuration
