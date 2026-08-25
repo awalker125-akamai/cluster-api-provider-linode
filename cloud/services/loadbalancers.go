@@ -361,8 +361,17 @@ func EnsureNodeBalancerConfigs(
 	return nbConfigs, nil
 }
 
-func processAndCreateNodeBalancerNodes(ctx context.Context, ipAddress string, clusterScope *scope.ClusterScope, nodeBalancerNodes []linodego.NodeBalancerNode, subnetID int) error {
+func processAndCreateNodeBalancerNodes(ctx context.Context, logger logr.Logger, ipAddress string, clusterScope *scope.ClusterScope, nodeBalancerNodes []linodego.NodeBalancerNode, subnetID int) error {
+
 	apiserverLBPort := DetermineAPIServerLBPort(clusterScope)
+
+	logger.Info("processAndCreateNodeBalancerNodes start",
+		"machineIP", ipAddress,
+		"subnetID", subnetID,
+		"existingNodeCount", len(nodeBalancerNodes),
+		"additionalPortCount", len(clusterScope.LinodeCluster.Spec.Network.AdditionalPorts),
+		"apiserverLBPort", apiserverLBPort,
+	)
 
 	// Set the port number and NB config ID for standard ports
 	portsToBeAdded := make([]map[string]int, 0, 1+len(clusterScope.LinodeCluster.Spec.Network.AdditionalPorts))
@@ -374,15 +383,25 @@ func processAndCreateNodeBalancerNodes(ctx context.Context, ipAddress string, cl
 		portsToBeAdded = append(portsToBeAdded, map[string]int{"configID": *portConfig.NodeBalancerConfigID, "port": portConfig.Port})
 	}
 
+	logger.Info("processAndCreateNodeBalancerNodes resolved port targets", "targetCount", len(portsToBeAdded))
+
 	// Cycle through all ports to be added
 	for _, ports := range portsToBeAdded {
 		ipPortCombo := fmt.Sprintf("%s:%d", ipAddress, ports["port"])
 		ipPortComboExists := false
+		logger.Info("processAndCreateNodeBalancerNodes evaluating target",
+			"address", ipPortCombo,
+			"configID", ports["configID"],
+		)
 
 		for _, nodes := range nodeBalancerNodes {
 			// Create the node if the IP:Port combination does not exist
 			if nodes.Address == ipPortCombo {
 				ipPortComboExists = true
+				logger.Info("processAndCreateNodeBalancerNodes target already exists",
+					"address", ipPortCombo,
+					"configID", ports["configID"],
+				)
 				break
 			}
 		}
@@ -396,6 +415,11 @@ func processAndCreateNodeBalancerNodes(ctx context.Context, ipAddress string, cl
 			if subnetID != 0 {
 				createConfig.SubnetID = subnetID
 			}
+			logger.Info("processAndCreateNodeBalancerNodes creating backend node",
+				"address", createConfig.Address,
+				"configID", ports["configID"],
+				"subnetID", createConfig.SubnetID,
+			)
 			_, err := clusterScope.LinodeClient.CreateNodeBalancerNode(
 				ctx,
 				*clusterScope.LinodeCluster.Spec.Network.NodeBalancerID,
@@ -403,10 +427,19 @@ func processAndCreateNodeBalancerNodes(ctx context.Context, ipAddress string, cl
 				createConfig,
 			)
 			if err != nil {
+				logger.Error(err, "processAndCreateNodeBalancerNodes create backend failed",
+					"address", createConfig.Address,
+					"configID", ports["configID"],
+				)
 				return err
 			}
+			logger.Info("processAndCreateNodeBalancerNodes created backend node",
+				"address", createConfig.Address,
+				"configID", ports["configID"],
+			)
 		}
 	}
+	logger.Info("processAndCreateNodeBalancerNodes complete", "machineIP", ipAddress)
 	return nil
 }
 
@@ -468,7 +501,8 @@ func AddNodesToNB(ctx context.Context, logger logr.Logger, clusterScope *scope.C
 			} else {
 				logger.Info("AddNodesToNB selected first non-private internal address as VPC backend", "machine", linodeMachine.Name, "address", IPs.Address)
 			}
-			if err := processAndCreateNodeBalancerNodes(ctx, IPs.Address, clusterScope, nodeBalancerNodes, subnetID); err != nil {
+			logger.Info("AddNodesToNB processing and creating NB nodes", "machine", linodeMachine.Name, "address", IPs.Address, "subnetID", subnetID)
+			if err := processAndCreateNodeBalancerNodes(ctx, logger, IPs.Address, clusterScope, nodeBalancerNodes, subnetID); err != nil {
 				logger.Error(err, "Failed to process and create NB nodes")
 				return err
 			}
@@ -488,7 +522,7 @@ func AddNodesToNB(ctx context.Context, logger logr.Logger, clusterScope *scope.C
 		internalIPFound = true
 		logger.Info("AddNodesToNB selected private fallback address", "machine", linodeMachine.Name, "address", IPs.Address)
 
-		err := processAndCreateNodeBalancerNodes(ctx, IPs.Address, clusterScope, nodeBalancerNodes, subnetID)
+		err := processAndCreateNodeBalancerNodes(ctx, logger, IPs.Address, clusterScope, nodeBalancerNodes, subnetID)
 		if err != nil {
 			logger.Error(err, "Failed to process and create NB nodes")
 			return err
