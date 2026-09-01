@@ -310,7 +310,7 @@ func buildSecondaryLinodeInterfaceFromDirectID(ctx context.Context, machineScope
 	if err != nil {
 		return nil, err
 	}
-	return buildSecondaryLinodeVPCInterface(subnetID), nil
+	return buildSecondaryLinodeVPCInterface(subnetID, vpc.VPCType == linodego.VPCTypeRDMA), nil
 }
 
 func buildSecondaryLinodeInterfaceFromReference(ctx context.Context, machineScope *scope.MachineScope, logger logr.Logger, vpcRef *corev1.ObjectReference, subnetName string) (*linodego.LinodeInterfaceCreateOptions, error) {
@@ -322,13 +322,16 @@ func buildSecondaryLinodeInterfaceFromReference(ctx context.Context, machineScop
 	if err != nil {
 		return nil, err
 	}
-	return buildSecondaryLinodeVPCInterface(subnetID), nil
+	return buildSecondaryLinodeVPCInterface(subnetID, linodeVPC.Spec.VPCType == linodego.VPCTypeRDMA), nil
 }
 
 func buildSecondaryLegacyInterfaceFromDirectID(ctx context.Context, machineScope *scope.MachineScope, logger logr.Logger, vpcID int, subnetName string) (*linodego.InstanceConfigInterfaceCreateOptions, error) {
 	vpc, err := getVPCFromID(ctx, machineScope, logger, vpcID)
 	if err != nil {
 		return nil, err
+	}
+	if vpc.VPCType == linodego.VPCTypeRDMA {
+		return nil, fmt.Errorf("additionalVPCs[].vpcID %d is an RDMA VPC; RDMA interfaces require interfaceGeneration=linode", vpcID)
 	}
 	subnetID, err := selectSubnetIDFromLinodeVPCSubnets(vpc.Subnets, subnetName)
 	if err != nil {
@@ -341,6 +344,9 @@ func buildSecondaryLegacyInterfaceFromReference(ctx context.Context, machineScop
 	linodeVPC, err := getVPCFromRef(ctx, machineScope, logger, vpcRef)
 	if err != nil {
 		return nil, err
+	}
+	if linodeVPC.Spec.VPCType == linodego.VPCTypeRDMA {
+		return nil, fmt.Errorf("additionalVPCs[].vpcRef %q is an RDMA VPC; RDMA interfaces require interfaceGeneration=linode", vpcRef.Name)
 	}
 	subnetID, err := selectSubnetIDFromCRDSubnets(linodeVPC.Spec.Subnets, subnetName)
 	if err != nil {
@@ -379,16 +385,24 @@ func selectSubnetIDFromCRDSubnets(subnets []infrav1alpha2.VPCSubnetCreateOptions
 
 // buildSecondaryLinodeVPCInterface builds a LinodeInterfaceCreateOptions for a secondary VPC.
 // Unlike the primary, it omits Primary=true and NAT1To1Address so it is a plain east-west interface.
-func buildSecondaryLinodeVPCInterface(subnetID int) *linodego.LinodeInterfaceCreateOptions {
-	return &linodego.LinodeInterfaceCreateOptions{
-		VPC: &linodego.VPCInterfaceCreateOptions{
-			SubnetID: subnetID,
-			IPv4: &linodego.VPCInterfaceIPv4CreateOptions{
-				Addresses: []linodego.VPCInterfaceIPv4AddressCreateOptions{{
-					Address: ptr.To("auto"),
-				}},
-			},
+// When isRDMA is true, the interface is attached via the rdma_vpc key instead of vpc so the API
+// does not reject it as a second interface from a different VPC.
+func buildSecondaryLinodeVPCInterface(subnetID int, isRDMA bool) *linodego.LinodeInterfaceCreateOptions {
+	vpcOpts := &linodego.VPCInterfaceCreateOptions{
+		SubnetID: subnetID,
+		IPv4: &linodego.VPCInterfaceIPv4CreateOptions{
+			Addresses: []linodego.VPCInterfaceIPv4AddressCreateOptions{{
+				Address: ptr.To("auto"),
+			}},
 		},
+	}
+	if isRDMA {
+		return &linodego.LinodeInterfaceCreateOptions{
+			RDMAVPC: vpcOpts,
+		}
+	}
+	return &linodego.LinodeInterfaceCreateOptions{
+		VPC: vpcOpts,
 	}
 }
 

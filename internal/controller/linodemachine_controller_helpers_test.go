@@ -2845,6 +2845,7 @@ func TestConfigureSecondaryVPCInterfaces(t *testing.T) {
 		expectLinodeIfaceCount    int
 		expectSecondarySubnetID   int
 		expectSecondaryNotPrimary bool
+		expectSecondaryIsRDMA     bool
 	}{
 		{
 			name:           "No-op when AdditionalVPCs is empty",
@@ -2999,6 +3000,83 @@ func TestConfigureSecondaryVPCInterfaces(t *testing.T) {
 			expectSecondarySubnetID: secondarySubnet,
 		},
 		{
+			name: "Success - RDMA VPC via direct ID, linode generation",
+			additionalVPCs: []infrav1alpha2.AdditionalVPCSpec{
+				{VPCID: ptr.To(secondaryVPCID)},
+			},
+			interfaceGeneration: linodego.GenerationLinode,
+			createConfig: &linodego.InstanceCreateOptions{
+				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
+					{VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: primarySubnet}},
+				},
+			},
+			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, _ *mock.MockK8sClient) {
+				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), secondaryVPCID).Return(&linodego.VPC{
+					ID:      secondaryVPCID,
+					VPCType: linodego.VPCTypeRDMA,
+					Subnets: []linodego.VPCSubnet{
+						{ID: secondarySubnet, Label: "rdma-subnet"},
+					},
+				}, nil)
+			},
+			expectErr:               false,
+			expectLinodeIfaceCount:  2,
+			expectSecondarySubnetID: secondarySubnet,
+			expectSecondaryIsRDMA:   true,
+		},
+		{
+			name: "Success - RDMA VPC via VPCRef, linode generation",
+			additionalVPCs: []infrav1alpha2.AdditionalVPCSpec{
+				{VPCRef: secondaryVPCRef},
+			},
+			interfaceGeneration: linodego.GenerationLinode,
+			createConfig: &linodego.InstanceCreateOptions{
+				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
+					{VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: primarySubnet}},
+				},
+			},
+			mockSetup: func(_ *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
+				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
+					Name:      "secondary-vpc",
+					Namespace: "default",
+				}, gomock.Any()).DoAndReturn(func(_ context.Context, _ client.ObjectKey, vpc *infrav1alpha2.LinodeVPC, _ ...client.GetOption) error {
+					vpc.Status.Ready = true
+					vpc.Spec.VPCID = ptr.To(secondaryVPCID)
+					vpc.Spec.VPCType = linodego.VPCTypeRDMA
+					vpc.Spec.Subnets = []infrav1alpha2.VPCSubnetCreateOptions{
+						{SubnetID: secondarySubnet, Label: "rdma-subnet"},
+					}
+					return nil
+				})
+			},
+			expectErr:               false,
+			expectLinodeIfaceCount:  2,
+			expectSecondarySubnetID: secondarySubnet,
+			expectSecondaryIsRDMA:   true,
+		},
+		{
+			name: "Error - RDMA VPC with legacy generation",
+			additionalVPCs: []infrav1alpha2.AdditionalVPCSpec{
+				{VPCID: ptr.To(secondaryVPCID)},
+			},
+			createConfig: &linodego.InstanceCreateOptions{
+				Interfaces: []linodego.InstanceConfigInterfaceCreateOptions{
+					{Purpose: linodego.InterfacePurposeVPC, Primary: true, SubnetID: ptr.To(primarySubnet)},
+				},
+			},
+			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, _ *mock.MockK8sClient) {
+				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), secondaryVPCID).Return(&linodego.VPC{
+					ID:      secondaryVPCID,
+					VPCType: linodego.VPCTypeRDMA,
+					Subnets: []linodego.VPCSubnet{
+						{ID: secondarySubnet, Label: "rdma-subnet"},
+					},
+				}, nil)
+			},
+			expectErr:         true,
+			expectErrContains: "RDMA interfaces require interfaceGeneration=linode",
+		},
+		{
 			name: "Success - SubnetName selects named subnet via direct ID",
 			additionalVPCs: []infrav1alpha2.AdditionalVPCSpec{
 				{VPCID: ptr.To(secondaryVPCID), SubnetName: "rdma-subnet"},
@@ -3144,15 +3222,23 @@ func TestConfigureSecondaryVPCInterfaces(t *testing.T) {
 			if tc.expectLinodeIfaceCount > 0 {
 				require.Len(t, tc.createConfig.LinodeInterfaces, tc.expectLinodeIfaceCount)
 				last := tc.createConfig.LinodeInterfaces[tc.expectLinodeIfaceCount-1]
-				require.NotNil(t, last.VPC)
-				if tc.expectSecondarySubnetID != 0 {
-					require.Equal(t, tc.expectSecondarySubnetID, last.VPC.SubnetID)
-				}
-				// Secondary should not have Primary=true or NAT1To1 set
-				if last.VPC.IPv4 != nil && len(last.VPC.IPv4.Addresses) > 0 {
-					addr := last.VPC.IPv4.Addresses[0]
-					require.Nil(t, addr.Primary)
-					require.Nil(t, addr.NAT1To1Address)
+				if tc.expectSecondaryIsRDMA {
+					require.NotNil(t, last.RDMAVPC)
+					require.Nil(t, last.VPC)
+					if tc.expectSecondarySubnetID != 0 {
+						require.Equal(t, tc.expectSecondarySubnetID, last.RDMAVPC.SubnetID)
+					}
+				} else {
+					require.NotNil(t, last.VPC)
+					if tc.expectSecondarySubnetID != 0 {
+						require.Equal(t, tc.expectSecondarySubnetID, last.VPC.SubnetID)
+					}
+					// Secondary should not have Primary=true or NAT1To1 set
+					if last.VPC.IPv4 != nil && len(last.VPC.IPv4.Addresses) > 0 {
+						addr := last.VPC.IPv4.Addresses[0]
+						require.Nil(t, addr.Primary)
+						require.Nil(t, addr.NAT1To1Address)
+					}
 				}
 			}
 		})

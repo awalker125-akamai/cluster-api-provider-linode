@@ -157,3 +157,7 @@ require (
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+// Temporary local patch adding RDMAVPC (rdma_vpc JSON key) to LinodeInterfaceCreateOptions.
+// Remove once https://github.com/linode/linodego upstream releases this field.
+replace github.com/linode/linodego/v2 => /tmp/linodego-rdma
