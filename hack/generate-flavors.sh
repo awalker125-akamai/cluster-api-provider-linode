@@ -47,7 +47,7 @@ for distro in ${SUPPORTED_DISTROS[@]}; do
             echo "****** Generating ${distro}-${name} flavor ******"
             kustomize build "${FLAVORS_DIR}/${distro}/${name}" > "${REPO_ROOT}/templates/cluster-template-${distro}-${name}.yaml"
             if grep -Fq "etcd-backup-restore" "${REPO_ROOT}/templates/cluster-template-${distro}-${name}.yaml"; then
-                sed -i -e "s|\${CERTPATH}|${CERT_HOSTPATH}|g; s|\${CACERTFILE}|${CACERT}|g; s|\${CERTFILE}|${CERT}|g; s|\${KEYFILE}|${KEY}|g" "${REPO_ROOT}/templates/cluster-template-${distro}-${name}.yaml"
+                sed -i'' -e "s|\${CERTPATH}|${CERT_HOSTPATH}|g; s|\${CACERTFILE}|${CACERT}|g; s|\${CERTFILE}|${CERT}|g; s|\${KEYFILE}|${KEY}|g" "${REPO_ROOT}/templates/cluster-template-${distro}-${name}.yaml"
             fi
         fi
     done

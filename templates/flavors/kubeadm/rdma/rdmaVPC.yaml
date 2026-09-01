@@ -1,0 +1,17 @@
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+kind: LinodeVPC
+metadata:
+  name: ${RDMA_VPC_NAME:=${CLUSTER_NAME}-rdma}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  credentialsRef:
+    name: ${CLUSTER_NAME}-credentials
+  region: ${LINODE_REGION}
+  vpcType: rdma
+  ipv4Range:
+    - ${RDMA_VPC_NETWORK_CIDR:=10.2.0.0/16}
+  subnets:
+    - ipv4: ${RDMA_SUBNET_CIDR:=10.2.0.0/24}
+      label: default

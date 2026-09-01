@@ -1,0 +1,65 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../default
+  - rdmaVPC.yaml
+
+patches:
+  # Switch both CP and worker templates from legacy interfaces to linode interfaces.
+  # linodeInterfaces uses the new Linode Interfaces beta (requires account opt-in).
+  # firewallID is intentionally omitted; configureFirewall sets it from firewallRef.
+  - target:
+      group: infrastructure.cluster.x-k8s.io
+      version: v1alpha2
+      kind: LinodeMachineTemplate
+    patch: |
+      - op: remove
+        path: /spec/template/spec/interfaces
+      - op: add
+        path: /spec/template/spec/interfaceGeneration
+        value: linode
+      - op: add
+        path: /spec/template/spec/linodeInterfaces
+        value:
+          - public:
+              ipv4:
+                addresses:
+                  - address: auto
+
+  # Add the RDMA VPC as eth1 on worker nodes only (not control plane).
+  # The name regex .*\}$ matches ${CLUSTER_NAME} but not ${CLUSTER_NAME}-cp.
+  - target:
+      group: infrastructure.cluster.x-k8s.io
+      version: v1alpha2
+      kind: LinodeMachineTemplate
+      name: ".*\\}$"
+    patch: |-
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+      kind: LinodeMachineTemplate
+      metadata:
+        name: ${CLUSTER_NAME}
+      spec:
+        template:
+          spec:
+            additionalVPCs:
+              - vpcRef:
+                  name: ${RDMA_VPC_NAME:=${CLUSTER_NAME}-rdma}
+                subnetName: default
+
+  # Enable VPC backends so the NodeBalancer uses VPC IPs instead of private IPs.
+  # nodeBalancerBackendIPv4Range scopes the NB backend IP selection to the primary
+  # VPC CIDR so that RDMA VPC IPs on eth1 are not registered as NB backends.
+  - target:
+      group: infrastructure.cluster.x-k8s.io
+      version: v1alpha2
+      kind: LinodeCluster
+    patch: |-
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+      kind: LinodeCluster
+      metadata:
+        name: ${CLUSTER_NAME}
+      spec:
+        network:
+          enableVPCBackends: true
+          nodeBalancerBackendIPv4Range: ${VPC_NETWORK_CIDR:=10.0.0.0/8}
