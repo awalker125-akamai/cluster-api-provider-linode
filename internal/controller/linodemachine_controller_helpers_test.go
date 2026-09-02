@@ -612,7 +612,7 @@ func validateInterfaceExpectations(
 	t *testing.T,
 	err error,
 	iface *linodego.InstanceConfigInterfaceCreateOptions,
-	linodeIface *linodego.LinodeInterfaceCreateOptions,
+	linodeIface *linodego.LinodeInstanceInterfaceCreateOptions,
 	expectErr bool,
 	expectErrMsg string,
 	expectInterface bool,
@@ -890,7 +890,7 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 	testCases := []struct {
 		name                  string
 		vpcID                 int
-		linodeInterfaces      []linodego.LinodeInterfaceCreateOptions
+		linodeInterfaces      []linodego.LinodeInstanceInterfaceCreateOptions
 		subnetName            string
 		mockSetup             func(mockLinodeClient *mock.MockLinodeClient)
 		expectErr             bool
@@ -902,7 +902,7 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 		{
 			name:             "Success - Valid VPC with subnets, no subnet name",
 			vpcID:            123,
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
 					ID: 123,
@@ -925,7 +925,7 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 		{
 			name:             "Success - Valid VPC with subnets, specific subnet name",
 			vpcID:            123,
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			subnetName:       "subnet-2",
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
@@ -949,7 +949,7 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 		{
 			name:             "Success - Valid VPC with subnets and ipv6 ranges, specific subnet name",
 			vpcID:            123,
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			subnetName:       "subnet-2",
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
@@ -978,13 +978,13 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 		{
 			name:  "Success - Inherits firewallID from existing interface",
 			vpcID: 123,
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
-				{
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{
+				{LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{
 					FirewallID: ptr.To(-1),
 					Public: &linodego.PublicInterfaceCreateOptions{
 						IPv4: &linodego.PublicInterfaceIPv4CreateOptions{},
 					},
-				},
+				}},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
@@ -1005,7 +1005,7 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 		{
 			name:             "Success - VPC interface already exists",
 			vpcID:            123,
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{{VPC: &linodego.VPCInterfaceCreateOptions{}}},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{{LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{VPC: &linodego.VPCInterfaceCreateOptions{}}}},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
 					ID: 123,
@@ -1029,7 +1029,7 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 		{
 			name:             "Error - VPC does not exist",
 			vpcID:            999,
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 999).Return(nil, fmt.Errorf("VPC not found"))
 			},
@@ -1040,7 +1040,7 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 		{
 			name:             "Error - VPC has no subnets",
 			vpcID:            123,
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
 					ID:      123,
@@ -1054,7 +1054,7 @@ func TestGetVPCLinodeInterfaceConfigFromDirectID(t *testing.T) {
 		{
 			name:             "Error - Subnet name not found",
 			vpcID:            123,
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			subnetName:       "non-existent",
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
@@ -1146,7 +1146,7 @@ func TestAddVPCInterfaceFromDirectID(t *testing.T) {
 			name:  "Success - Interface added correctly with new network interfaces",
 			vpcID: 123,
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
@@ -1198,7 +1198,7 @@ func TestAddVPCInterfaceFromDirectID(t *testing.T) {
 			name:  "Error - getVPCInterfaceConfigFromDirectID returns error with new network interfaces",
 			vpcID: 999,
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 999).Return(nil, fmt.Errorf("VPC not found"))
@@ -1235,10 +1235,8 @@ func TestAddVPCInterfaceFromDirectID(t *testing.T) {
 			name:  "Success - Interface already exists with new network interfaces",
 			vpcID: 123,
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
-					{
-						VPC: &linodego.VPCInterfaceCreateOptions{},
-					},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{
+					{LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{VPC: &linodego.VPCInterfaceCreateOptions{}}},
 				},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient) {
@@ -1288,7 +1286,7 @@ func TestAddVPCInterfaceFromDirectID(t *testing.T) {
 
 			// Store original interface count
 			originalIfaceCount := len(tc.createConfig.Interfaces)
-			originalLinodeIfaceCount := len(tc.createConfig.LinodeInterfaces)
+			originalLinodeIfaceCount := len(tc.createConfig.LinodeInstanceInterfaces)
 
 			// Call the function being tested
 			err := addVPCInterfaceFromDirectID(ctx, machineScope, tc.createConfig, logger, tc.vpcID)
@@ -1302,11 +1300,11 @@ func TestAddVPCInterfaceFromDirectID(t *testing.T) {
 				switch {
 				case tc.expectNoLinodeIface:
 					// If Linode interface already existed, count should remain the same
-					require.Len(t, tc.createConfig.LinodeInterfaces, originalLinodeIfaceCount)
+					require.Len(t, tc.createConfig.LinodeInstanceInterfaces, originalLinodeIfaceCount)
 				default:
 					// If Linode interface was added, count should increase
-					require.Len(t, tc.createConfig.LinodeInterfaces, originalLinodeIfaceCount+1)
-					require.NotNil(t, tc.createConfig.LinodeInterfaces[0].VPC)
+					require.Len(t, tc.createConfig.LinodeInstanceInterfaces, originalLinodeIfaceCount+1)
+					require.NotNil(t, tc.createConfig.LinodeInstanceInterfaces[0].VPC)
 				}
 				switch {
 				case tc.expectNoIface:
@@ -1375,7 +1373,7 @@ func TestConfigureVPCInterface(t *testing.T) {
 			name:         "Success - VPCID on machine with new network interfaces",
 			machineVPCID: ptr.To(123),
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
@@ -1420,7 +1418,7 @@ func TestConfigureVPCInterface(t *testing.T) {
 			name:         "Success - VPCID on cluster with new network interfaces",
 			clusterVPCID: ptr.To(123),
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
@@ -1465,7 +1463,7 @@ func TestConfigureVPCInterface(t *testing.T) {
 			name:   "Success - VPC reference with new network interfaces",
 			vpcRef: vpcRef,
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
@@ -1500,7 +1498,7 @@ func TestConfigureVPCInterface(t *testing.T) {
 		{
 			name: "Success - No VPC configuration with new network interfaces",
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
 				// No expectations needed
@@ -1524,7 +1522,7 @@ func TestConfigureVPCInterface(t *testing.T) {
 			name:         "Error - VPCID on machine, VPC not found with new network interfaces",
 			machineVPCID: ptr.To(999),
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 999).Return(nil, fmt.Errorf("VPC not found"))
@@ -1548,7 +1546,7 @@ func TestConfigureVPCInterface(t *testing.T) {
 			name:         "Error - VPCID on cluster, VPC not found with new network interfaces",
 			clusterVPCID: ptr.To(999),
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
 				mockLinodeClient.EXPECT().GetVPC(gomock.Any(), 999).Return(nil, fmt.Errorf("VPC not found"))
@@ -1596,7 +1594,7 @@ func TestConfigureVPCInterface(t *testing.T) {
 
 			// Store original interface count
 			originalIfaceCount := len(tc.createConfig.Interfaces)
-			originalLinodeIfaceCount := len(tc.createConfig.LinodeInterfaces)
+			originalLinodeIfaceCount := len(tc.createConfig.LinodeInstanceInterfaces)
 
 			// Call the function being tested
 			err := configureVPCInterface(ctx, machineScope, tc.createConfig, logger)
@@ -1610,11 +1608,11 @@ func TestConfigureVPCInterface(t *testing.T) {
 				switch {
 				case tc.expectLinodeInterface:
 					// If Linode interface was added, count should increase
-					require.Len(t, tc.createConfig.LinodeInterfaces, originalLinodeIfaceCount+1)
-					require.NotNil(t, tc.createConfig.LinodeInterfaces[0].VPC)
+					require.Len(t, tc.createConfig.LinodeInstanceInterfaces, originalLinodeIfaceCount+1)
+					require.NotNil(t, tc.createConfig.LinodeInstanceInterfaces[0].VPC)
 				default:
 					// If no Linode interface was added, count should remain the same
-					require.Len(t, tc.createConfig.LinodeInterfaces, originalLinodeIfaceCount)
+					require.Len(t, tc.createConfig.LinodeInstanceInterfaces, originalLinodeIfaceCount)
 				}
 				switch {
 				case tc.expectInterface:
@@ -1920,7 +1918,7 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 	testCases := []struct {
 		name                  string
 		vpcRef                *corev1.ObjectReference
-		linodeInterfaces      []linodego.LinodeInterfaceCreateOptions
+		linodeInterfaces      []linodego.LinodeInstanceInterfaceCreateOptions
 		subnetName            string
 		mockSetup             func(mockK8sClient *mock.MockK8sClient)
 		expectErr             bool
@@ -1934,7 +1932,7 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 			vpcRef: &corev1.ObjectReference{
 				Name: "test-vpc",
 			},
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
 					Name:      "test-vpc",
@@ -1966,7 +1964,7 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 				Name:      "test-vpc",
 				Namespace: "custom-namespace",
 			},
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
 					Name:      "test-vpc",
@@ -1993,7 +1991,7 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 				Name: "test-vpc",
 			},
 			subnetName:       "subnet-2",
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
 					Name:      "test-vpc",
@@ -2023,13 +2021,13 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 			vpcRef: &corev1.ObjectReference{
 				Name: "test-vpc",
 			},
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
-				{
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{
+				{LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{
 					FirewallID: ptr.To(-1),
 					Public: &linodego.PublicInterfaceCreateOptions{
 						IPv4: &linodego.PublicInterfaceIPv4CreateOptions{},
 					},
-				},
+				}},
 			},
 			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
@@ -2057,10 +2055,8 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 			vpcRef: &corev1.ObjectReference{
 				Name: "test-vpc",
 			},
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
-				{
-					VPC: &linodego.VPCInterfaceCreateOptions{},
-				},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{
+				{LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{VPC: &linodego.VPCInterfaceCreateOptions{}}},
 			},
 			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
@@ -2092,7 +2088,7 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 			vpcRef: &corev1.ObjectReference{
 				Name: "nonexistent-vpc",
 			},
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
 					Name:      "nonexistent-vpc",
@@ -2108,7 +2104,7 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 			vpcRef: &corev1.ObjectReference{
 				Name: "test-vpc",
 			},
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
 					Name:      "test-vpc",
@@ -2128,7 +2124,7 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 			vpcRef: &corev1.ObjectReference{
 				Name: "test-vpc",
 			},
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
 					Name:      "test-vpc",
@@ -2150,7 +2146,7 @@ func TestGetVPCLinodeInterfaceConfig(t *testing.T) {
 				Name: "test-vpc",
 			},
 			subnetName:       "nonexistent-subnet",
-			linodeInterfaces: []linodego.LinodeInterfaceCreateOptions{},
+			linodeInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{},
 			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
 				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{
 					Name:      "test-vpc",
@@ -2927,8 +2923,8 @@ func TestConfigureSecondaryVPCInterfaces(t *testing.T) {
 			},
 			interfaceGeneration: linodego.GenerationLinode,
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
-					{VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: primarySubnet}},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{
+					{LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: primarySubnet}}},
 				},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, _ *mock.MockK8sClient) {
@@ -2978,8 +2974,8 @@ func TestConfigureSecondaryVPCInterfaces(t *testing.T) {
 			},
 			interfaceGeneration: linodego.GenerationLinode,
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
-					{VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: primarySubnet}},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{
+					{LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: primarySubnet}}},
 				},
 			},
 			mockSetup: func(_ *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
@@ -3006,8 +3002,8 @@ func TestConfigureSecondaryVPCInterfaces(t *testing.T) {
 			},
 			interfaceGeneration: linodego.GenerationLinode,
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
-					{VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: primarySubnet}},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{
+					{LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: primarySubnet}}},
 				},
 			},
 			mockSetup: func(mockLinodeClient *mock.MockLinodeClient, _ *mock.MockK8sClient) {
@@ -3031,8 +3027,8 @@ func TestConfigureSecondaryVPCInterfaces(t *testing.T) {
 			},
 			interfaceGeneration: linodego.GenerationLinode,
 			createConfig: &linodego.InstanceCreateOptions{
-				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{
-					{VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: primarySubnet}},
+				LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{
+					{LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: primarySubnet}}},
 				},
 			},
 			mockSetup: func(_ *mock.MockLinodeClient, mockK8sClient *mock.MockK8sClient) {
@@ -3220,8 +3216,8 @@ func TestConfigureSecondaryVPCInterfaces(t *testing.T) {
 			}
 
 			if tc.expectLinodeIfaceCount > 0 {
-				require.Len(t, tc.createConfig.LinodeInterfaces, tc.expectLinodeIfaceCount)
-				last := tc.createConfig.LinodeInterfaces[tc.expectLinodeIfaceCount-1]
+				require.Len(t, tc.createConfig.LinodeInstanceInterfaces, tc.expectLinodeIfaceCount)
+				last := tc.createConfig.LinodeInstanceInterfaces[tc.expectLinodeIfaceCount-1]
 				if tc.expectSecondaryIsRDMA {
 					require.NotNil(t, last.RDMAVPC)
 					require.Nil(t, last.VPC)
