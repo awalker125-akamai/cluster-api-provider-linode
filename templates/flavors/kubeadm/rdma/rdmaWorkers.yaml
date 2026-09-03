@@ -1,0 +1,40 @@
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: ${CLUSTER_NAME}-rdma-workers
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${RDMA_WORKER_MACHINE_COUNT:=1}
+  selector:
+    matchLabels:
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: "${KUBERNETES_VERSION}"
+      bootstrap:
+        configRef:
+          name: ${CLUSTER_NAME}
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: KubeadmConfigTemplate
+      infrastructureRef:
+        name: ${CLUSTER_NAME}-rdma-workers
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: LinodeMachineTemplate
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+kind: LinodeMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-rdma-workers
+spec:
+  template:
+    spec:
+      image: ${LINODE_OS:="linode/ubuntu22.04"}
+      type: ${RDMA_WORKER_MACHINE_TYPE:=g3-gpu-rtxpro6000-blackwell-rdma-8}
+      region: ${LINODE_REGION}
+      firewallRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+        kind: LinodeFirewall
+        name: ${CLUSTER_NAME}
+      interfaces:
+        - purpose: public

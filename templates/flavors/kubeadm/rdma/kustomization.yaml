@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - ../default
   - rdmaVPC.yaml
+  - rdmaWorkers.yaml
 
 patches:
   # Switch both CP and worker templates from legacy interfaces to linode interfaces.
@@ -27,8 +28,8 @@ patches:
                 addresses:
                   - address: auto
 
-  # Add the RDMA VPC as eth1 on worker nodes only (not control plane).
-  # The name regex .*\}$ matches ${CLUSTER_NAME} but not ${CLUSTER_NAME}-cp.
+  # Add the RDMA VPC as eth1 on the default worker nodes (not control plane).
+  # The name regex .*\}$ matches ${CLUSTER_NAME} but not ${CLUSTER_NAME}-cp or ${CLUSTER_NAME}-rdma-workers.
   - target:
       group: infrastructure.cluster.x-k8s.io
       version: v1alpha2
@@ -39,6 +40,25 @@ patches:
       kind: LinodeMachineTemplate
       metadata:
         name: ${CLUSTER_NAME}
+      spec:
+        template:
+          spec:
+            additionalVPCs:
+              - vpcRef:
+                  name: ${RDMA_VPC_NAME:=${CLUSTER_NAME}-rdma}
+                subnetName: default
+
+  # Add the RDMA VPC as eth1 on the GPU RDMA worker nodes.
+  - target:
+      group: infrastructure.cluster.x-k8s.io
+      version: v1alpha2
+      kind: LinodeMachineTemplate
+      name: ".*rdma-workers$"
+    patch: |-
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+      kind: LinodeMachineTemplate
+      metadata:
+        name: ${CLUSTER_NAME}-rdma-workers
       spec:
         template:
           spec:
