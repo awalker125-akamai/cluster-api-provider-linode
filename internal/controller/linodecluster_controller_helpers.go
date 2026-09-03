@@ -57,10 +57,21 @@ func addMachineToLB(ctx context.Context, clusterScope *scope.ClusterScope) error
 			logger.Error(err, "Failed to add nodes to NB")
 			return err
 		}
+		nodeBalancerNodes, err = clusterScope.LinodeClient.ListNodeBalancerNodes(
+			ctx,
+			*clusterScope.LinodeCluster.Spec.Network.NodeBalancerID,
+			*clusterScope.LinodeCluster.Spec.Network.ApiserverNodeBalancerConfigID,
+			&linodego.ListOptions{},
+		)
+		if err != nil {
+			logger.Error(err, "Failed to refresh NB nodes after add")
+			return err
+		}
 	}
-	ipPortCombo := getIPPortCombo(clusterScope)
+	ipPortCombo := getIPPortCombo(ctx, clusterScope)
 	for _, node := range nodeBalancerNodes {
 		if !slices.Contains(ipPortCombo, node.Address) {
+			logger.Info("<<<<< ANDY Deleting NB node not in IP port combo", "nodeAddress", node.Address, "ipPortCombo", ipPortCombo)
 			if err := clusterScope.LinodeClient.DeleteNodeBalancerNode(ctx, node.NodeBalancerID, node.ConfigID, node.ID); err != nil {
 				logger.Error(err, "Failed to delete NB node")
 				return err
@@ -87,15 +98,21 @@ func removeMachineFromNB(ctx context.Context, logger logr.Logger, clusterScope *
 	return nil
 }
 
-func getIPPortCombo(cscope *scope.ClusterScope) (ipPortComboList []string) {
+func getIPPortCombo(ctx context.Context, cscope *scope.ClusterScope) (ipPortComboList []string) {
 	apiServerLBPort := services.DetermineAPIServerLBPort(cscope)
 	useVPCIPs := services.ShouldUseVPC(cscope)
+	primaryCIDR := cscope.LinodeCluster.Spec.Network.NodeBalancerBackendIPv4Range
+	if useVPCIPs {
+		resolvedCIDR := resolvePrimaryVPCSubnetCIDR(ctx, cscope, logr.FromContextOrDiscard(ctx))
+		if resolvedCIDR != "" {
+			primaryCIDR = resolvedCIDR
+		}
+	}
 
 	for _, eachMachine := range cscope.LinodeMachines.Items {
 		var selectedIP string
 
 		if useVPCIPs {
-			primaryCIDR := cscope.LinodeCluster.Spec.Network.NodeBalancerBackendIPv4Range
 			if ip, ok := findFirstVPCInternalIP(eachMachine.Status.Addresses, primaryCIDR); ok {
 				selectedIP = ip
 			}
@@ -113,6 +130,57 @@ func getIPPortCombo(cscope *scope.ClusterScope) (ipPortComboList []string) {
 	}
 
 	return ipPortComboList
+}
+
+func resolvePrimaryVPCSubnetCIDR(ctx context.Context, cscope *scope.ClusterScope, logger logr.Logger) string {
+	if cscope == nil || cscope.LinodeCluster == nil {
+		return ""
+	}
+
+	if cscope.LinodeCluster.Spec.VPCID != nil {
+		if cscope.LinodeClient == nil {
+			return ""
+		}
+		vpc, err := cscope.LinodeClient.GetVPC(ctx, *cscope.LinodeCluster.Spec.VPCID)
+		if err != nil {
+			logger.Error(err, "Failed to fetch VPC for backend IP selection")
+			return ""
+		}
+		return selectPrimarySubnetCIDR(cscope.LinodeCluster.Spec.Network.SubnetName, vpc.Subnets, func(subnet linodego.VPCSubnet) string { return subnet.Label }, func(subnet linodego.VPCSubnet) string { return subnet.IPv4 })
+	}
+
+	if cscope.LinodeCluster.Spec.VPCRef != nil {
+		if cscope.Client == nil {
+			return ""
+		}
+		linodeVPC := &infrav1alpha2.LinodeVPC{}
+		key := client.ObjectKey{Name: cscope.LinodeCluster.Spec.VPCRef.Name, Namespace: cscope.LinodeCluster.Spec.VPCRef.Namespace}
+		if key.Namespace == "" {
+			key.Namespace = cscope.LinodeCluster.Namespace
+		}
+		if err := cscope.Client.Get(ctx, key, linodeVPC); err != nil {
+			logger.Error(err, "Failed to fetch LinodeVPC for backend IP selection", "name", key.Name, "namespace", key.Namespace)
+			return ""
+		}
+		return selectPrimarySubnetCIDR(cscope.LinodeCluster.Spec.Network.SubnetName, linodeVPC.Spec.Subnets, func(subnet infrav1alpha2.VPCSubnetCreateOptions) string { return subnet.Label }, func(subnet infrav1alpha2.VPCSubnetCreateOptions) string { return subnet.IPv4 })
+	}
+
+	return ""
+}
+
+func selectPrimarySubnetCIDR[T any](subnetName string, subnets []T, getLabel func(T) string, getIPv4 func(T) string) string {
+	if len(subnets) == 0 {
+		return ""
+	}
+	if subnetName != "" {
+		for _, subnet := range subnets {
+			if getLabel(subnet) == subnetName {
+				return getIPv4(subnet)
+			}
+		}
+		return ""
+	}
+	return getIPv4(subnets[0])
 }
 
 // findFirstVPCInternalIP returns the first internal IP that belongs to the primary VPC.

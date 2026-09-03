@@ -648,6 +648,8 @@ func getSubnetIDAndCIDR(ctx context.Context, clusterScope *scope.ClusterScope, l
 
 // DeleteNodesFromNB removes backend Nodes from the Node Balancer configuration
 func DeleteNodesFromNB(ctx context.Context, logger logr.Logger, clusterScope *scope.ClusterScope) error {
+
+	logger.Info(">>>>>>ANDY DeleteNodesFromNB start", "cluster", clusterScope.LinodeCluster.Name, "machineCount", len(clusterScope.LinodeMachines.Items))
 	if clusterScope.LinodeCluster.Spec.ControlPlaneEndpoint.Host == "" {
 		logger.Info("NodeBalancer already deleted, no NodeBalancer backend Node to remove")
 		return nil

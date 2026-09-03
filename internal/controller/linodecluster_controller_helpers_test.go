@@ -315,7 +315,7 @@ func TestGetIPPortCombo(t *testing.T) {
 			t.Parallel()
 
 			// Call the function
-			result := getIPPortCombo(testcase.clusterScope)
+			result := getIPPortCombo(t.Context(), testcase.clusterScope)
 
 			// Verify the results
 			assert.ElementsMatch(t, testcase.expectedCombo, result)
@@ -356,8 +356,8 @@ func TestFindFirstVPCInternalIP(t *testing.T) {
 		{
 			name: "CIDR filter - selects IP within primary CIDR over secondary VPC IP",
 			addresses: []clusterv1.MachineAddress{
-				{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},  // secondary VPC
-				{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},  // primary VPC
+				{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},      // secondary VPC
+				{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},      // primary VPC
 				{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"}, // private
 			},
 			primaryCIDR: "10.0.0.0/24",
@@ -429,8 +429,8 @@ func TestGetIPPortComboWithSecondaryVPC(t *testing.T) {
 						{
 							Status: infrav1alpha2.LinodeMachineStatus{
 								Addresses: []clusterv1.MachineAddress{
-									{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},  // secondary VPC (eth1)
-									{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},  // primary VPC (eth0)
+									{Type: clusterv1.MachineInternalIP, Address: "10.1.0.5"},      // secondary VPC (eth1)
+									{Type: clusterv1.MachineInternalIP, Address: "10.0.0.5"},      // primary VPC (eth0)
 									{Type: clusterv1.MachineInternalIP, Address: "192.168.128.5"}, // private
 								},
 							},
@@ -502,7 +502,7 @@ func TestGetIPPortComboWithSecondaryVPC(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			result := getIPPortCombo(tt.clusterScope)
+			result := getIPPortCombo(t.Context(), tt.clusterScope)
 			assert.ElementsMatch(t, tt.expectedCombo, result)
 		})
 	}
@@ -607,6 +607,59 @@ func TestAddMachineToLB(t *testing.T) {
 			},
 			expectedError:       true,
 			expectedErrorString: "API error",
+		},
+		{
+			name: "NodeBalancer refreshes node list before cleanup",
+			clusterScope: &scope.ClusterScope{
+				Cluster: &clusterv1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "test-cluster"}},
+				LinodeCluster: &infrav1alpha2.LinodeCluster{
+					Spec: infrav1alpha2.LinodeClusterSpec{
+						Network: infrav1alpha2.NetworkSpec{
+							LoadBalancerType:              lbTypeNB,
+							NodeBalancerID:                util.Pointer(12345),
+							ApiserverNodeBalancerConfigID: util.Pointer(67890),
+						},
+					},
+				},
+				LinodeMachines: infrav1alpha2.LinodeMachineList{
+					Items: []infrav1alpha2.LinodeMachine{
+						{
+							ObjectMeta: metav1.ObjectMeta{Name: "cp-1"},
+							Status: infrav1alpha2.LinodeMachineStatus{
+								Addresses: []clusterv1.MachineAddress{{Type: clusterv1.MachineInternalIP, Address: "192.168.130.2"}},
+							},
+						},
+					},
+				},
+			},
+			setupMocks: func(mockLinodeClient *mock.MockLinodeClient, mockDNSClient *mock.MockAkamClient, mockK8sClient *mock.MockK8sClient) {
+				mockLinodeClient.EXPECT().
+					ListNodeBalancerNodes(
+						gomock.Any(),
+						12345,
+						67890,
+						gomock.Any(),
+					).
+					Return([]linodego.NodeBalancerNode{}, nil).
+					Times(1)
+				mockLinodeClient.EXPECT().
+					CreateNodeBalancerNode(
+						gomock.Any(),
+						12345,
+						67890,
+						gomock.Any(),
+					).
+					Return(&linodego.NodeBalancerNode{Address: "192.168.130.2:6443", NodeBalancerID: 12345, ConfigID: 67890, ID: 1}, nil)
+				mockLinodeClient.EXPECT().
+					ListNodeBalancerNodes(
+						gomock.Any(),
+						12345,
+						67890,
+						gomock.Any(),
+					).
+					Return([]linodego.NodeBalancerNode{{Address: "192.168.130.2:6443", NodeBalancerID: 12345, ConfigID: 67890, ID: 1}}, nil)
+			},
+			expectedError: false,
 		},
 		{
 			name: "machines ready for DNS load balancer type",
