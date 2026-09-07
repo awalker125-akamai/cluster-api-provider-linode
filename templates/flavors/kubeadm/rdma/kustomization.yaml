@@ -3,11 +3,14 @@ kind: Kustomization
 
 resources:
   - ../default
+  - rdmaVPC.yaml
 
 patches:
-  # Switch workers to RDMA machine type with linode interface generation and RDMA VPC subnet
+  # Switch workers to RDMA machine type with linode interface generation.
+  # References the RDMA VPC created by rdmaVPC.yaml via vpcRef + subnetNames.
   # RDMA_MACHINE_TYPE defaults to g3-gpu-rtxpro6000-blackwell-rdma-8
-  # RDMA_SUBNET_ID must be set to an RDMA VPC subnet ID
+  # RDMA_SUBNET_CIDR must be set — subnet CIDR within the RDMA VPC (e.g. 192.168.0.0/24)
+  # RDMA_SUBNET_LABEL defaults to gpu-0
   - target:
       group: infrastructure.cluster.x-k8s.io
       version: v1alpha2
@@ -24,8 +27,12 @@ patches:
             type: ${RDMA_MACHINE_TYPE:=g3-gpu-rtxpro6000-blackwell-rdma-8}
             interfaceGeneration: linode
             rdmaVPC:
-              subnetIDs:
-                - ${RDMA_SUBNET_ID}
+              vpcRef:
+                apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+                kind: LinodeVPC
+                name: ${CLUSTER_NAME}-rdma
+              subnetNames:
+                - ${RDMA_SUBNET_LABEL:=gpu-0}
   # Remove legacy interfaces — incompatible with rdmaVPC + interfaceGeneration=linode
   - target:
       group: infrastructure.cluster.x-k8s.io
