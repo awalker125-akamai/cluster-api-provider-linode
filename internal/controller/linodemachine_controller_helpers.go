@@ -171,6 +171,13 @@ func newCreateConfig(ctx context.Context, machineScope *scope.MachineScope, gzip
 		}
 	}
 
+	// Configure RDMA VPC interfaces if needed
+	if machineScope.LinodeMachine.Spec.RDMAVPC != nil {
+		if err := configureRDMAVPCInterfaces(ctx, machineScope, createConfig, logger); err != nil {
+			return nil, err
+		}
+	}
+
 	// Configure placement group if needed
 	if machineScope.LinodeMachine.Spec.PlacementGroupID != 0 || machineScope.LinodeMachine.Spec.PlacementGroupRef != nil {
 		if err := configurePlacementGroup(ctx, machineScope, createConfig, logger); err != nil {
@@ -1559,6 +1566,79 @@ func configureVlanInterface(ctx context.Context, machineScope *scope.MachineScop
 	}
 
 	return nil
+}
+
+// configureRDMAVPCInterfaces appends LinodeInstanceInterfaces entries for each RDMA subnet.
+// Requires interfaceGeneration=linode and must not be combined with LinodeInterfaces or legacy Interfaces.
+func configureRDMAVPCInterfaces(ctx context.Context, machineScope *scope.MachineScope, createConfig *linodego.InstanceCreateOptions, logger logr.Logger) error {
+	if machineScope.LinodeMachine.Spec.InterfaceGeneration != linodego.GenerationLinode {
+		return errors.New("rdmaVPC requires interfaceGeneration=linode")
+	}
+
+	if len(createConfig.LinodeInterfaces) > 0 {
+		return errors.New("rdmaVPC cannot be combined with linodeInterfaces")
+	}
+
+	if len(createConfig.Interfaces) > 0 {
+		return errors.New("rdmaVPC cannot be combined with legacy interfaces")
+	}
+
+	subnetIDs, err := resolveRDMASubnetIDs(ctx, machineScope, logger, machineScope.LinodeMachine.Spec.RDMAVPC)
+	if err != nil {
+		return err
+	}
+
+	for _, subnetID := range subnetIDs {
+		createConfig.LinodeInstanceInterfaces = append(createConfig.LinodeInstanceInterfaces, linodego.LinodeInstanceInterfaceCreateOptions{
+			RDMAVPC: &linodego.RDMAVPCInterfaceCreateOptions{
+				SubnetID: subnetID,
+				IPv4: &linodego.RDMAVPCInterfaceIPv4Options{
+					Addresses: []linodego.RDMAVPCInterfaceIPv4AddressOptions{{Address: "auto"}},
+				},
+			},
+		})
+	}
+
+	logger.Info("Configured RDMA VPC interfaces", "count", len(subnetIDs))
+
+	return nil
+}
+
+// resolveRDMASubnetIDs returns subnet IDs from spec.rdmaVPC: either the direct subnetIDs list,
+// or by matching subnetNames against a LinodeVPC referenced by vpcRef.
+func resolveRDMASubnetIDs(ctx context.Context, machineScope *scope.MachineScope, logger logr.Logger, rdmaVPC *infrav1alpha2.RDMAVPCSpec) ([]int, error) {
+	if len(rdmaVPC.SubnetIDs) > 0 {
+		return rdmaVPC.SubnetIDs, nil
+	}
+
+	if rdmaVPC.VPCRef == nil {
+		return nil, errors.New("rdmaVPC: either subnetIDs or (vpcRef + subnetNames) must be specified")
+	}
+
+	linodeVPC, err := getVPCFromRef(ctx, machineScope, logger, rdmaVPC.VPCRef)
+	if err != nil {
+		return nil, fmt.Errorf("rdmaVPC: failed to get VPC from ref: %w", err)
+	}
+
+	subnetsByLabel := make(map[string]int, len(linodeVPC.Spec.Subnets))
+	for _, subnet := range linodeVPC.Spec.Subnets {
+		subnetsByLabel[subnet.Label] = subnet.SubnetID
+	}
+
+	subnetIDs := make([]int, 0, len(rdmaVPC.SubnetNames))
+	for _, name := range rdmaVPC.SubnetNames {
+		id, ok := subnetsByLabel[name]
+		if !ok {
+			return nil, fmt.Errorf("rdmaVPC: subnet %q not found in VPC", name)
+		}
+		subnetIDs = append(subnetIDs, id)
+	}
+
+	if len(subnetIDs) == 0 {
+		return nil, errors.New("rdmaVPC: no subnets resolved; specify subnetIDs or subnetNames")
+	}
+
+	return subnetIDs, nil
 }
 
 // configurePlacementGroup adds placement group configuration

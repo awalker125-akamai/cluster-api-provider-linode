@@ -2741,3 +2741,163 @@ func TestBuildInstanceAddrs(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigureRDMAVPCInterfaces(t *testing.T) {
+	t.Parallel()
+
+	vpcRef := &corev1.ObjectReference{Name: "rdma-vpc", Namespace: "default"}
+
+	testCases := []struct {
+		name               string
+		rdmaVPCSpec        *infrav1alpha2.RDMAVPCSpec
+		interfaceGen       linodego.InterfaceGeneration
+		createConfig       *linodego.InstanceCreateOptions
+		mockSetup          func(mockK8sClient *mock.MockK8sClient)
+		expectErr          bool
+		expectErrMsg       string
+		expectSubnetIDs    []int
+	}{
+		{
+			name: "Success - direct subnetIDs",
+			rdmaVPCSpec: &infrav1alpha2.RDMAVPCSpec{
+				VPCID:     new(100),
+				SubnetIDs: []int{1, 2, 3},
+			},
+			interfaceGen: linodego.GenerationLinode,
+			createConfig: &linodego.InstanceCreateOptions{},
+			mockSetup:    func(_ *mock.MockK8sClient) {},
+			expectErr:    false,
+			expectSubnetIDs: []int{1, 2, 3},
+		},
+		{
+			name: "Success - subnetNames from vpcRef",
+			rdmaVPCSpec: &infrav1alpha2.RDMAVPCSpec{
+				VPCRef:      vpcRef,
+				SubnetNames: []string{"gpu-0", "gpu-1"},
+			},
+			interfaceGen: linodego.GenerationLinode,
+			createConfig: &linodego.InstanceCreateOptions{},
+			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
+				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{Name: "rdma-vpc", Namespace: "default"}, gomock.Any()).
+					DoAndReturn(func(_ context.Context, _ client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+						vpc := obj.(*infrav1alpha2.LinodeVPC)
+						vpc.Status.Ready = true
+						vpc.Spec.VPCID = new(100)
+						vpc.Spec.Subnets = []infrav1alpha2.VPCSubnetCreateOptions{
+							{Label: "gpu-0", SubnetID: 10},
+							{Label: "gpu-1", SubnetID: 11},
+						}
+						return nil
+					})
+			},
+			expectErr:       false,
+			expectSubnetIDs: []int{10, 11},
+		},
+		{
+			name: "Error - wrong interface generation",
+			rdmaVPCSpec: &infrav1alpha2.RDMAVPCSpec{
+				VPCID:     new(100),
+				SubnetIDs: []int{1},
+			},
+			interfaceGen: linodego.GenerationLegacyConfig,
+			createConfig: &linodego.InstanceCreateOptions{},
+			mockSetup:    func(_ *mock.MockK8sClient) {},
+			expectErr:    true,
+			expectErrMsg: "interfaceGeneration=linode",
+		},
+		{
+			name: "Error - cannot combine with LinodeInterfaces",
+			rdmaVPCSpec: &infrav1alpha2.RDMAVPCSpec{
+				VPCID:     new(100),
+				SubnetIDs: []int{1},
+			},
+			interfaceGen: linodego.GenerationLinode,
+			createConfig: &linodego.InstanceCreateOptions{
+				LinodeInterfaces: []linodego.LinodeInterfaceCreateOptions{{}},
+			},
+			mockSetup:    func(_ *mock.MockK8sClient) {},
+			expectErr:    true,
+			expectErrMsg: "linodeInterfaces",
+		},
+		{
+			name: "Error - cannot combine with legacy interfaces",
+			rdmaVPCSpec: &infrav1alpha2.RDMAVPCSpec{
+				VPCID:     new(100),
+				SubnetIDs: []int{1},
+			},
+			interfaceGen: linodego.GenerationLinode,
+			createConfig: &linodego.InstanceCreateOptions{
+				Interfaces: []linodego.InstanceConfigInterfaceCreateOptions{{}},
+			},
+			mockSetup:    func(_ *mock.MockK8sClient) {},
+			expectErr:    true,
+			expectErrMsg: "legacy interfaces",
+		},
+		{
+			name: "Error - subnetName not found in VPC",
+			rdmaVPCSpec: &infrav1alpha2.RDMAVPCSpec{
+				VPCRef:      vpcRef,
+				SubnetNames: []string{"missing"},
+			},
+			interfaceGen: linodego.GenerationLinode,
+			createConfig: &linodego.InstanceCreateOptions{},
+			mockSetup: func(mockK8sClient *mock.MockK8sClient) {
+				mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{Name: "rdma-vpc", Namespace: "default"}, gomock.Any()).
+					DoAndReturn(func(_ context.Context, _ client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+						vpc := obj.(*infrav1alpha2.LinodeVPC)
+						vpc.Status.Ready = true
+						vpc.Spec.VPCID = new(100)
+						vpc.Spec.Subnets = []infrav1alpha2.VPCSubnetCreateOptions{
+							{Label: "gpu-0", SubnetID: 10},
+						}
+						return nil
+					})
+			},
+			expectErr:    true,
+			expectErrMsg: `subnet "missing" not found`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockK8sClient := mock.NewMockK8sClient(ctrl)
+			tc.mockSetup(mockK8sClient)
+
+			logger := testr.New(t)
+			machineScope := &scope.MachineScope{
+				Client: mockK8sClient,
+				LinodeMachine: &infrav1alpha2.LinodeMachine{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+					Spec: infrav1alpha2.LinodeMachineSpec{
+						InterfaceGeneration: tc.interfaceGen,
+						RDMAVPC:             tc.rdmaVPCSpec,
+					},
+				},
+				LinodeCluster: &infrav1alpha2.LinodeCluster{},
+			}
+
+			err := configureRDMAVPCInterfaces(t.Context(), machineScope, tc.createConfig, logger)
+
+			if tc.expectErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectErrMsg)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Len(t, tc.createConfig.LinodeInstanceInterfaces, len(tc.expectSubnetIDs))
+			for i, subnetID := range tc.expectSubnetIDs {
+				iface := tc.createConfig.LinodeInstanceInterfaces[i]
+				require.NotNil(t, iface.RDMAVPC)
+				require.Equal(t, subnetID, iface.RDMAVPC.SubnetID)
+				require.NotNil(t, iface.RDMAVPC.IPv4)
+				require.Equal(t, "auto", iface.RDMAVPC.IPv4.Addresses[0].Address)
+			}
+		})
+	}
+}
