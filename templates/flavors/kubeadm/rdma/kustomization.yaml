@@ -1,0 +1,95 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../default
+
+patches:
+  # Switch workers to RDMA machine type with linode interface generation and RDMA VPC subnet
+  # RDMA_MACHINE_TYPE defaults to g3-gpu-rtxpro6000-blackwell-rdma-8
+  # RDMA_SUBNET_ID must be set to an RDMA VPC subnet ID
+  - target:
+      group: infrastructure.cluster.x-k8s.io
+      version: v1alpha2
+      kind: LinodeMachineTemplate
+      name: ".*\\}$"
+    patch: |-
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+      kind: LinodeMachineTemplate
+      metadata:
+        name: ${CLUSTER_NAME}
+      spec:
+        template:
+          spec:
+            type: ${RDMA_MACHINE_TYPE:=g3-gpu-rtxpro6000-blackwell-rdma-8}
+            interfaceGeneration: linode
+            rdmaVPC:
+              subnetIDs:
+                - ${RDMA_SUBNET_ID}
+  # Remove legacy interfaces — incompatible with rdmaVPC + interfaceGeneration=linode
+  - target:
+      group: infrastructure.cluster.x-k8s.io
+      version: v1alpha2
+      kind: LinodeMachineTemplate
+      name: ".*\\}$"
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/interfaces
+  # Enable VPC-scoped NodeBalancer backends
+  # NB_BACKEND_IPV4_RANGE must be set to the VPC subnet CIDR used for NodeBalancer backends
+  - target:
+      group: infrastructure.cluster.x-k8s.io
+      version: v1alpha2
+      kind: LinodeCluster
+    patch: |-
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+      kind: LinodeCluster
+      metadata:
+        name: ${CLUSTER_NAME}
+      spec:
+        network:
+          enableVPCBackends: true
+          nodeBalancerBackendIPv4Range: ${NB_BACKEND_IPV4_RANGE}
+  # Set cni.exclusive=false so other CNIs can coexist alongside Cilium
+  - target:
+      group: addons.cluster.x-k8s.io
+      version: v1alpha1
+      kind: HelmChartProxy
+      name: ".*-cilium"
+    patch: |-
+      - op: replace
+        path: /spec/valuesTemplate
+        value: |
+          bgpControlPlane:
+            enabled: true
+          cni:
+            exclusive: false
+          routingMode: native
+          nodePort:
+            directRoutingDevice: eth+
+          kubeProxyReplacement: true
+          ipv4NativeRoutingCIDR: ${VPC_NETWORK_CIDR:=10.0.0.0/8}
+          tunnelProtocol: ""
+          enableIPv4Masquerade: true
+          policyAuditMode: ${FW_AUDIT_ONLY:=true}
+          hostFirewall:
+            enabled: true
+          extraConfig:
+            allow-localhost: policy
+          k8sServiceHost: {{ .InfraCluster.spec.controlPlaneEndpoint.host }}
+          k8sServicePort: {{ .InfraCluster.spec.controlPlaneEndpoint.port }}
+          extraArgs:
+          - --nodeport-addresses=0.0.0.0/0
+          ipam:
+            mode: kubernetes
+          ipv4:
+            enabled: true
+          ipv6:
+            enabled: false
+          k8s:
+            requireIPv4PodCIDR: true
+          hubble:
+            relay:
+              enabled: true
+            ui:
+              enabled: true
