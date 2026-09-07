@@ -204,12 +204,26 @@ for resource in manager_yaml:
         resource["spec"]["template"]["spec"].pop("securityContext")
         for container in resource["spec"]["template"]["spec"]["containers"]:
             container.pop("securityContext")
+            env = container.setdefault("env", [])
+
+            otel_value = os.getenv("OTEL_TRACES_EXPORTER", "none")
+            env.append({
+                "name": "OTEL_TRACES_EXPORTER",
+                "value": otel_value,
+            })
+
+            linode_debug_value = os.getenv("LINODE_DEBUG")
+            if linode_debug_value:
+                env.append({
+                    "name": "LINODE_DEBUG",
+                    "value": linode_debug_value,
+                })
+
             timeout_value = os.getenv("LINODE_CLIENT_TIMEOUT")
             if timeout_value:
-                env = container.setdefault("env", [])
                 env.append({
                     "name": "LINODE_CLIENT_TIMEOUT",
-                    "value": timeout_value
+                    "value": timeout_value,
                 })
 
 k8s_yaml(encode_yaml_stream(manager_yaml))
