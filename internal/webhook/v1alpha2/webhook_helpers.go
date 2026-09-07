@@ -163,6 +163,10 @@ func validateInterfaceAccountSettings(ctx context.Context, linodegoclient client
 
 	accountSettings, err := linodegoclient.GetAccountSettings(ctx)
 	if err != nil {
+		if (&linodego.Error{Code: http.StatusForbidden}).Is(err) {
+			// This is temporary behavior for restricted-user tokens: the check is skipped when the platform rejects the account-settings lookup, leaving any real create-time failures to surface later instead of failing admission up front.
+			return nil, nil
+		}
 		return nil, fmt.Errorf("failed to get customer account settings: %w", err)
 	}
 

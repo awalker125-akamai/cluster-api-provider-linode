@@ -19,6 +19,7 @@ package v1alpha2
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
 	"github.com/linode/linodego/v2"
@@ -102,9 +103,20 @@ func TestValidateInterfaceAccountSettings(t *testing.T) {
 					assert.Nil(t, ferr)
 				}),
 			),
-			// GetAccountSettings returns an error.
+			// GetAccountSettings returns a 403: skip the account-setting gate and allow creation to proceed.
 			Path(
-				Call("GetAccountSettings returns error", func(ctx context.Context, mck Mock) {
+				Call("GetAccountSettings returns 403", func(ctx context.Context, mck Mock) {
+					mck.LinodeClient.EXPECT().GetAccountSettings(gomock.Any()).Return(nil, &linodego.Error{Code: http.StatusForbidden, Message: "Forbidden"})
+				}),
+				Result("skips validation for 403", func(ctx context.Context, mck Mock) {
+					ferr, err := validateInterfaceAccountSettings(ctx, mck.LinodeClient, true, false, path)
+					require.NoError(t, err)
+					assert.Nil(t, ferr)
+				}),
+			),
+			// Other GetAccountSettings errors still fail validation.
+			Path(
+				Call("GetAccountSettings returns non-403 error", func(ctx context.Context, mck Mock) {
 					mck.LinodeClient.EXPECT().GetAccountSettings(gomock.Any()).Return(nil, errors.New("API error"))
 				}),
 				Result("wraps error", func(ctx context.Context, mck Mock) {
