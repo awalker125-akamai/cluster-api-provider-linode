@@ -56,6 +56,7 @@ const (
 	maxBootstrapDataBytesCloudInit = 16384
 	vlanIPFormat                   = "%s/11"
 	defaultNodeIPv6CIDRRange       = "/64" // Default IPv6 range for VPC interfaces
+	rdmaInterfaceFirewallDisabled  = -1
 )
 
 var (
@@ -1684,7 +1685,14 @@ func configureFirewall(ctx context.Context, machineScope *scope.MachineScope, cr
 
 	// If using LinodeInterfaces that needs to know about the firewall ID
 	for i := range createConfig.LinodeInstanceInterfaces {
-		createConfig.LinodeInstanceInterfaces[i].FirewallID = new(fwID)
+		if createConfig.LinodeInstanceInterfaces[i].RDMAVPC != nil {
+			// RDMA Interfaces cannot have a firewall attached
+			logger.V(1).Info("ANDY>>>>>>Setting interface with RDMAVPC configuration firewall id to -1", "interfaceIndex", i)
+			createConfig.LinodeInstanceInterfaces[i].FirewallID = new(rdmaInterfaceFirewallDisabled)
+		} else {
+			createConfig.LinodeInstanceInterfaces[i].FirewallID = new(fwID)
+		}
+
 	}
 
 	return nil

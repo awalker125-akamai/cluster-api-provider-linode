@@ -205,6 +205,11 @@ for resource in manager_yaml:
         for container in resource["spec"]["template"]["spec"]["containers"]:
             container.pop("securityContext")
             env = container.setdefault("env", [])
+            args = container.setdefault("args", [])
+
+            capl_zap_log_level = os.getenv("CAPL_ZAP_LOG_LEVEL")
+            if capl_zap_log_level:
+                args.append("--zap-log-level=" + capl_zap_log_level)
 
             otel_value = os.getenv("OTEL_TRACES_EXPORTER", "none")
             env.append({
