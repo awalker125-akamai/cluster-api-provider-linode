@@ -2748,14 +2748,14 @@ func TestConfigureRDMAVPCInterfaces(t *testing.T) {
 	vpcRef := &corev1.ObjectReference{Name: "rdma-vpc", Namespace: "default"}
 
 	testCases := []struct {
-		name               string
-		rdmaVPCSpec        *infrav1alpha2.RDMAVPCSpec
-		interfaceGen       linodego.InterfaceGeneration
-		createConfig       *linodego.InstanceCreateOptions
-		mockSetup          func(mockK8sClient *mock.MockK8sClient)
-		expectErr          bool
-		expectErrMsg       string
-		expectSubnetIDs    []int
+		name            string
+		rdmaVPCSpec     *infrav1alpha2.RDMAVPCSpec
+		interfaceGen    linodego.InterfaceGeneration
+		createConfig    *linodego.InstanceCreateOptions
+		mockSetup       func(mockK8sClient *mock.MockK8sClient)
+		expectErr       bool
+		expectErrMsg    string
+		expectSubnetIDs []int
 	}{
 		{
 			name: "Success - direct subnetIDs",
@@ -2763,10 +2763,10 @@ func TestConfigureRDMAVPCInterfaces(t *testing.T) {
 				VPCID:     new(100),
 				SubnetIDs: []int{1, 2, 3},
 			},
-			interfaceGen: linodego.GenerationLinode,
-			createConfig: &linodego.InstanceCreateOptions{},
-			mockSetup:    func(_ *mock.MockK8sClient) {},
-			expectErr:    false,
+			interfaceGen:    linodego.GenerationLinode,
+			createConfig:    &linodego.InstanceCreateOptions{},
+			mockSetup:       func(_ *mock.MockK8sClient) {},
+			expectErr:       false,
 			expectSubnetIDs: []int{1, 2, 3},
 		},
 		{
@@ -2900,4 +2900,53 @@ func TestConfigureRDMAVPCInterfaces(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigureFirewallWithRDMAVPCInterface(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockK8sClient := mock.NewMockK8sClient(ctrl)
+	firewallID := 3350161
+
+	mockK8sClient.EXPECT().Get(gomock.Any(), client.ObjectKey{Name: "test-firewall", Namespace: "default"}, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+			linodeFirewall := obj.(*infrav1alpha2.LinodeFirewall)
+			linodeFirewall.Spec.FirewallID = &firewallID
+			return nil
+		})
+
+	machineScope := &scope.MachineScope{
+		Client: mockK8sClient,
+		LinodeMachine: &infrav1alpha2.LinodeMachine{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "default"},
+			Spec: infrav1alpha2.LinodeMachineSpec{
+				FirewallRef: &corev1.ObjectReference{Name: "test-firewall"},
+			},
+		},
+	}
+
+	createConfig := &linodego.InstanceCreateOptions{
+		LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{
+			{
+				RDMAVPC: &linodego.RDMAVPCInterfaceCreateOptions{SubnetID: 10},
+			},
+			{
+				LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{
+					VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: 11},
+				},
+			},
+		},
+	}
+
+	err := configureFirewall(t.Context(), machineScope, createConfig, testr.New(t))
+	require.NoError(t, err)
+
+	require.Equal(t, firewallID, createConfig.FirewallID)
+	require.NotNil(t, createConfig.LinodeInstanceInterfaces[0].FirewallID)
+	require.Equal(t, rdmaInterfaceFirewallDisabled, *createConfig.LinodeInstanceInterfaces[0].FirewallID)
+	require.NotNil(t, createConfig.LinodeInstanceInterfaces[1].FirewallID)
+	require.Equal(t, firewallID, *createConfig.LinodeInstanceInterfaces[1].FirewallID)
 }
