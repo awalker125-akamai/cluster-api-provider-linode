@@ -414,6 +414,13 @@ spec:
                         x-kubernetes-validations:
                         - message: Value is immutable
                           rule: self == oldSelf
+                      hostPinID:
+                        description: |-
+                          !!TEMPORARY!! hostPinID pins this instance to a specific physical host for RDMA co-location testing.
+                          This is NOT intended as a long-term API surface — remove once host-pinning is handled upstream
+                          (e.g. via placement groups or a proper RDMA scheduling primitive).
+                          See: https://github.com/linode/cluster-api-provider-linode/issues/TODO
+                        type: integer
                       image:
                         description: image is the Linode image to use for the instance.
                         type: string
