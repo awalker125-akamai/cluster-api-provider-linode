@@ -4,8 +4,22 @@ kind: Kustomization
 resources:
   - ../default
   - rdmaVPC.yaml
+  # !!TEMPORARY!! Adds second LMT + MachineDeployment for host-pin round-robin testing.
+  # Remove with rdmaHostPinTemplates.yaml once host-pinning is handled properly.
+  - rdmaHostPinTemplates.yaml
 
 patches:
+  # !!TEMPORARY!! Pin first worker template to a specific host for RDMA co-location testing.
+  # RDMA_HOST_PIN_ID_0 defaults to 0 (= no pinning). Remove with rdmaHostPinTemplates.yaml.
+  - target:
+      group: infrastructure.cluster.x-k8s.io
+      version: v1alpha2
+      kind: LinodeMachineTemplate
+      name: ".*\\}$"
+    patch: |-
+      - op: add
+        path: /spec/template/spec/hostPinID
+        value: ${RDMA_HOST_PIN_ID_0:=0}
   # Switch workers to RDMA machine type with linode interface generation.
   # References the RDMA VPC created by rdmaVPC.yaml via vpcRef + subnetNames.
   # RDMA_MACHINE_TYPE defaults to g3-gpu-rtxpro6000-blackwell-rdma-8

@@ -1,0 +1,58 @@
+---
+# !!TEMPORARY!! Host-pinning round-robin templates for RDMA co-location testing.
+# These produce a second LinodeMachineTemplate + MachineDeployment pinned to a different
+# physical host than the first (${CLUSTER_NAME}). Remove once host-pinning is handled
+# via placement groups or another proper primitive.
+#
+# Usage:
+#   export RDMA_HOST_PIN_ID_0=<host_id>   # host for ${CLUSTER_NAME} workers
+#   export RDMA_HOST_PIN_ID_1=<host_id>   # host for ${CLUSTER_NAME}-1 workers
+#
+# If either var is unset (or 0), that template has no host pinning.
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+kind: LinodeMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-1
+spec:
+  template:
+    spec:
+      firewallRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+        kind: LinodeFirewall
+        name: ${CLUSTER_NAME}
+      image: ${LINODE_OS:="linode/ubuntu22.04"}
+      interfaceGeneration: linode
+      rdmaVPC:
+        vpcRef:
+          apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
+          kind: LinodeVPC
+          name: ${CLUSTER_NAME}-rdma
+        subnetNames:
+          - ${RDMA_SUBNET_LABEL:=gpu-0}
+      region: ${LINODE_REGION}
+      type: ${RDMA_MACHINE_TYPE:=g3-gpu-rtxpro6000-blackwell-rdma-8}
+      # !!TEMPORARY!! Remove with the rest of the host-pin scaffolding.
+      hostPinID: ${RDMA_HOST_PIN_ID_1:=0}
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: ${CLUSTER_NAME}-1
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${WORKER_MACHINE_COUNT}
+  selector:
+    matchLabels: null
+  template:
+    spec:
+      bootstrap:
+        configRef:
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: KubeadmConfigTemplate
+          name: ${CLUSTER_NAME}
+      clusterName: ${CLUSTER_NAME}
+      infrastructureRef:
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: LinodeMachineTemplate
+        name: ${CLUSTER_NAME}-1
+      version: ${KUBERNETES_VERSION}

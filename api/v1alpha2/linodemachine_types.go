@@ -204,6 +204,13 @@ type LinodeMachineSpec struct {
 	// +kubebuilder:validation:Enum=legacy_config;linode
 	// +kubebuilder:default=legacy_config
 	InterfaceGeneration linodego.InterfaceGeneration `json:"interfaceGeneration,omitempty"`
+
+	// !!TEMPORARY!! hostPinID pins this instance to a specific physical host for RDMA co-location testing.
+	// This is NOT intended as a long-term API surface — remove once host-pinning is handled upstream
+	// (e.g. via placement groups or a proper RDMA scheduling primitive).
+	// See: https://github.com/linode/cluster-api-provider-linode/issues/TODO
+	// +optional
+	HostPinID int `json:"hostPinID,omitempty"`
 }
 
 // RDMAVPCSpec defines an RDMA VPC attachment for a LinodeMachine.

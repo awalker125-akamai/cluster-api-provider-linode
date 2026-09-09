@@ -1162,6 +1162,13 @@ func linodeMachineSpecToInstanceCreateConfig(machineSpec infrav1alpha2.LinodeMac
 		instCreateOpts.PrivateIP = *machineSpec.PrivateIP
 	}
 
+	// !!TEMPORARY!! applyTemporaryHostPin — pins the instance to a specific physical host for RDMA
+	// co-location testing via round-robin LinodeMachineTemplates. Remove once host-pinning is
+	// handled via placement groups or another proper primitive.
+	if machineSpec.HostPinID != 0 {
+		instCreateOpts.HostID = machineSpec.HostPinID
+	}
+
 	if len(machineSpec.LinodeInterfaces) > 0 {
 		instCreateOpts.LinodeInstanceInterfaces = constructLinodeInterfaceCreateOpts(machineSpec.LinodeInterfaces)
 		// If LinodeInterfaces are specified, the InterfaceGeneration must be GenerationLinode
