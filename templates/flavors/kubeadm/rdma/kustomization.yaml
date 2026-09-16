@@ -4,60 +4,37 @@ kind: Kustomization
 resources:
   - ../default
   - rdmaVPC.yaml
-  # !!TEMPORARY!! Adds second LMT + MachineDeployment for host-pin round-robin testing.
-  # Remove with rdmaHostPinTemplates.yaml once host-pinning is handled properly.
+  # !!TEMPORARY!! Adds GPU LMTs + MachineDeployments for host-pin round-robin testing.
+  # Remove rdmaHostPinTemplates.yaml once host-pinning is handled via placement groups.
   - rdmaHostPinTemplates.yaml
 
 patches:
-  # !!TEMPORARY!! Pin first worker template to a specific host for RDMA co-location testing.
-  # RDMA_HOST_PIN_ID_0 defaults to 0 (= no pinning). Remove with rdmaHostPinTemplates.yaml.
+  # Rename the base worker LMT (${CLUSTER_NAME}) to ${CLUSTER_NAME}-0 so all three pools
+  # use a consistent numeric suffix: -0 (non-GPU), -1 (GPU host A), -2 (GPU host B).
   - target:
       group: infrastructure.cluster.x-k8s.io
       version: v1alpha2
       kind: LinodeMachineTemplate
       name: ".*\\}$"
     patch: |-
-      - op: add
-        path: /spec/template/spec/hostPinID
-        value: ${RDMA_HOST_PIN_ID_0:=0}
-  # Switch workers to RDMA machine type with linode interface generation.
-  # References the RDMA VPC created by rdmaVPC.yaml via vpcRef + subnetNames.
-  # RDMA_MACHINE_TYPE defaults to g3-gpu-rtxpro6000-blackwell-rdma-8
-  # RDMA_SUBNET_CIDR must be set — subnet CIDR within the RDMA VPC (e.g. 192.168.0.0/24)
-  # RDMA_SUBNET_LABEL defaults to gpu-0
+      - op: replace
+        path: /metadata/name
+        value: ${CLUSTER_NAME}-0
+  # Rename the base worker MachineDeployment to ${CLUSTER_NAME}-0 and fix the LMT reference.
   - target:
-      group: infrastructure.cluster.x-k8s.io
-      version: v1alpha2
-      kind: LinodeMachineTemplate
+      group: cluster.x-k8s.io
+      version: v1beta2
+      kind: MachineDeployment
       name: ".*\\}$"
     patch: |-
-      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
-      kind: LinodeMachineTemplate
-      metadata:
-        name: ${CLUSTER_NAME}
-      spec:
-        template:
-          spec:
-            type: ${RDMA_MACHINE_TYPE:=g3-gpu-rtxpro6000-blackwell-rdma-8}
-            interfaceGeneration: linode
-            rdmaVPC:
-              vpcRef:
-                apiVersion: infrastructure.cluster.x-k8s.io/v1alpha2
-                kind: LinodeVPC
-                name: ${CLUSTER_NAME}-rdma
-              subnetNames:
-                - ${RDMA_SUBNET_LABEL:=gpu-0}
-  # Remove legacy interfaces — incompatible with rdmaVPC + interfaceGeneration=linode
-  - target:
-      group: infrastructure.cluster.x-k8s.io
-      version: v1alpha2
-      kind: LinodeMachineTemplate
-      name: ".*\\}$"
-    patch: |-
-      - op: remove
-        path: /spec/template/spec/interfaces
-  # Enable VPC-scoped NodeBalancer backends
-  # NB_BACKEND_IPV4_RANGE must be set to the VPC subnet CIDR used for NodeBalancer backends
+      - op: replace
+        path: /metadata/name
+        value: ${CLUSTER_NAME}-0
+      - op: replace
+        path: /spec/template/spec/infrastructureRef/name
+        value: ${CLUSTER_NAME}-0
+  # Enable VPC-scoped NodeBalancer backends.
+  # NB_BACKEND_IPV4_RANGE must be set to the VPC subnet CIDR used for NodeBalancer backends.
   - target:
       group: infrastructure.cluster.x-k8s.io
       version: v1alpha2
@@ -71,7 +48,7 @@ patches:
         network:
           enableVPCBackends: true
           nodeBalancerBackendIPv4Range: ${NB_BACKEND_IPV4_RANGE}
-  # Set cni.exclusive=false so other CNIs can coexist alongside Cilium
+  # Set cni.exclusive=false so other CNIs can coexist alongside Cilium.
   - target:
       group: addons.cluster.x-k8s.io
       version: v1alpha1
