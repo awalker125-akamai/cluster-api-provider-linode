@@ -623,6 +623,12 @@ func getVPCFromRef(ctx context.Context, machineScope *scope.MachineScope, logger
 
 // getVPCInterfaceConfig returns the interface configuration for a VPC based on the provided VPC reference
 func getVPCInterfaceConfig(ctx context.Context, machineScope *scope.MachineScope, interfaces []linodego.InstanceConfigInterfaceCreateOptions, logger logr.Logger, vpcRef *corev1.ObjectReference) (*linodego.InstanceConfigInterfaceCreateOptions, error) {
+	for _, netInterface := range interfaces {
+		if netInterface.Purpose == linodego.InterfacePurposeVPC && netInterface.SubnetID != nil && *netInterface.SubnetID != 0 {
+			return nil, nil //nolint:nilnil // caller pre-populated SubnetID; skip lookup and honor it
+		}
+	}
+
 	linodeVPC, err := getVPCFromRef(ctx, machineScope, logger, vpcRef)
 	if err != nil {
 		return nil, err
@@ -685,6 +691,12 @@ func getVPCInterfaceConfig(ctx context.Context, machineScope *scope.MachineScope
 }
 
 func getVPCLinodeInterfaceConfig(ctx context.Context, machineScope *scope.MachineScope, linodeInterfaces []linodego.LinodeInstanceInterfaceCreateOptions, logger logr.Logger, vpcRef *corev1.ObjectReference) (*linodego.LinodeInstanceInterfaceCreateOptions, error) {
+	for _, netInterface := range linodeInterfaces {
+		if netInterface.VPC != nil && netInterface.VPC.SubnetID != 0 {
+			return nil, nil //nolint:nilnil // caller pre-populated SubnetID; skip lookup and honor it
+		}
+	}
+
 	linodeVPC, err := getVPCFromRef(ctx, machineScope, logger, vpcRef)
 	if err != nil {
 		return nil, err
@@ -773,6 +785,12 @@ func getVPCFromID(ctx context.Context, machineScope *scope.MachineScope, logger 
 
 // getVPCLinodeInterfaceConfigFromDirectID returns the linode interface configuration for a VPC based on a direct VPC ID
 func getVPCLinodeInterfaceConfigFromDirectID(ctx context.Context, machineScope *scope.MachineScope, linodeInterfaces []linodego.LinodeInstanceInterfaceCreateOptions, logger logr.Logger, vpcID int) (*linodego.LinodeInstanceInterfaceCreateOptions, error) {
+	for _, netInterface := range linodeInterfaces {
+		if netInterface.VPC != nil && netInterface.VPC.SubnetID != 0 {
+			return nil, nil //nolint:nilnil // caller pre-populated SubnetID; skip lookup and honor it
+		}
+	}
+
 	vpc, err := getVPCFromID(ctx, machineScope, logger, vpcID)
 	if err != nil {
 		return nil, err
@@ -845,6 +863,12 @@ func getVPCLinodeInterfaceConfigFromDirectID(ctx context.Context, machineScope *
 
 // getVPCInterfaceConfigFromDirectID returns the interface configuration for a VPC based on a direct VPC ID
 func getVPCInterfaceConfigFromDirectID(ctx context.Context, machineScope *scope.MachineScope, interfaces []linodego.InstanceConfigInterfaceCreateOptions, logger logr.Logger, vpcID int) (*linodego.InstanceConfigInterfaceCreateOptions, error) {
+	for _, netInterface := range interfaces {
+		if netInterface.Purpose == linodego.InterfacePurposeVPC && netInterface.SubnetID != nil && *netInterface.SubnetID != 0 {
+			return nil, nil //nolint:nilnil // caller pre-populated SubnetID; skip lookup and honor it
+		}
+	}
+
 	vpc, err := getVPCFromID(ctx, machineScope, logger, vpcID)
 	if err != nil {
 		return nil, err
