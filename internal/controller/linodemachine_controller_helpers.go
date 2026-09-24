@@ -621,6 +621,18 @@ func getVPCFromRef(ctx context.Context, machineScope *scope.MachineScope, logger
 	return &linodeVPC, nil
 }
 
+// effectiveVPCSubnetName returns the subnet name to use for the primary VPC interface.
+// Machine-level vpcSubnetName takes precedence over the cluster-level subnetName.
+func effectiveVPCSubnetName(machineScope *scope.MachineScope) string {
+	if machineScope.LinodeMachine.Spec.VPCSubnetName != "" {
+		return machineScope.LinodeMachine.Spec.VPCSubnetName
+	}
+	if machineScope.LinodeCluster != nil {
+		return machineScope.LinodeCluster.Spec.Network.SubnetName
+	}
+	return ""
+}
+
 // getVPCInterfaceConfig returns the interface configuration for a VPC based on the provided VPC reference
 func getVPCInterfaceConfig(ctx context.Context, machineScope *scope.MachineScope, interfaces []linodego.InstanceConfigInterfaceCreateOptions, logger logr.Logger, vpcRef *corev1.ObjectReference) (*linodego.InstanceConfigInterfaceCreateOptions, error) {
 	linodeVPC, err := getVPCFromRef(ctx, machineScope, logger, vpcRef)
@@ -632,22 +644,31 @@ func getVPCInterfaceConfig(ctx context.Context, machineScope *scope.MachineScope
 		ipv6Config *linodego.InstanceConfigInterfaceCreateOptionsIPv6
 		subnetID   int
 	)
-	subnetName := machineScope.LinodeCluster.Spec.Network.SubnetName // name of subnet to use
-	if subnetName != "" {
+	if machineScope.LinodeMachine.Spec.VPCSubnetID != nil {
+		subnetID = *machineScope.LinodeMachine.Spec.VPCSubnetID
 		for _, subnet := range linodeVPC.Spec.Subnets {
-			if subnet.Label == subnetName {
-				subnetID = subnet.SubnetID
+			if subnet.SubnetID == subnetID {
 				ipv6Config = getMachineIPv6Config(machineScope, len(subnet.IPv6))
 				break
 			}
 		}
-
-		if subnetID == 0 {
-			logger.Info("Failed to fetch subnet ID for specified subnet name")
-		}
 	} else {
-		subnetID = linodeVPC.Spec.Subnets[0].SubnetID // get first subnet if nothing specified
-		ipv6Config = getMachineIPv6Config(machineScope, len(linodeVPC.Spec.Subnets[0].IPv6))
+		subnetName := effectiveVPCSubnetName(machineScope)
+		if subnetName != "" {
+			for _, subnet := range linodeVPC.Spec.Subnets {
+				if subnet.Label == subnetName {
+					subnetID = subnet.SubnetID
+					ipv6Config = getMachineIPv6Config(machineScope, len(subnet.IPv6))
+					break
+				}
+			}
+			if subnetID == 0 {
+				logger.Info("Failed to fetch subnet ID for specified subnet name")
+			}
+		} else {
+			subnetID = linodeVPC.Spec.Subnets[0].SubnetID // get first subnet if nothing specified
+			ipv6Config = getMachineIPv6Config(machineScope, len(linodeVPC.Spec.Subnets[0].IPv6))
+		}
 	}
 
 	if subnetID == 0 {
@@ -692,22 +713,31 @@ func getVPCLinodeInterfaceConfig(ctx context.Context, machineScope *scope.Machin
 		ipv6Config *linodego.VPCInterfaceIPv6CreateOptions
 		subnetID   int
 	)
-	subnetName := machineScope.LinodeCluster.Spec.Network.SubnetName // name of subnet to use
-	if subnetName != "" {
+	if machineScope.LinodeMachine.Spec.VPCSubnetID != nil {
+		subnetID = *machineScope.LinodeMachine.Spec.VPCSubnetID
 		for _, subnet := range linodeVPC.Spec.Subnets {
-			if subnet.Label == subnetName {
-				subnetID = subnet.SubnetID
+			if subnet.SubnetID == subnetID {
 				ipv6Config = getVPCLinodeInterfaceIPv6Config(machineScope, len(subnet.IPv6))
 				break
 			}
 		}
-
-		if subnetID == 0 {
-			logger.Info("Failed to fetch subnet ID for specified subnet name")
-		}
 	} else {
-		subnetID = linodeVPC.Spec.Subnets[0].SubnetID // get first subnet if nothing specified
-		ipv6Config = getVPCLinodeInterfaceIPv6Config(machineScope, len(linodeVPC.Spec.Subnets[0].IPv6))
+		subnetName := effectiveVPCSubnetName(machineScope)
+		if subnetName != "" {
+			for _, subnet := range linodeVPC.Spec.Subnets {
+				if subnet.Label == subnetName {
+					subnetID = subnet.SubnetID
+					ipv6Config = getVPCLinodeInterfaceIPv6Config(machineScope, len(subnet.IPv6))
+					break
+				}
+			}
+			if subnetID == 0 {
+				logger.Info("Failed to fetch subnet ID for specified subnet name")
+			}
+		} else {
+			subnetID = linodeVPC.Spec.Subnets[0].SubnetID // get first subnet if nothing specified
+			ipv6Config = getVPCLinodeInterfaceIPv6Config(machineScope, len(linodeVPC.Spec.Subnets[0].IPv6))
+		}
 	}
 
 	if subnetID == 0 {
@@ -776,30 +806,34 @@ func getVPCLinodeInterfaceConfigFromDirectID(ctx context.Context, machineScope *
 
 	var (
 		subnetID   int
-		subnetName string
 		ipv6Config *linodego.VPCInterfaceIPv6CreateOptions
 	)
 
-	// Safety check for when LinodeCluster is nil (e.g., when using direct VPCID without cluster)
-	if machineScope.LinodeCluster != nil && machineScope.LinodeCluster.Spec.Network.SubnetName != "" {
-		subnetName = machineScope.LinodeCluster.Spec.Network.SubnetName
-	}
-
-	// If subnet name specified, find matching subnet; otherwise use first subnet
-	if subnetName != "" {
+	if machineScope.LinodeMachine.Spec.VPCSubnetID != nil {
+		subnetID = *machineScope.LinodeMachine.Spec.VPCSubnetID
 		for _, subnet := range vpc.Subnets {
-			if subnet.Label == subnetName {
-				subnetID = subnet.ID
+			if subnet.ID == subnetID {
 				ipv6Config = getVPCLinodeInterfaceIPv6Config(machineScope, len(subnet.IPv6))
 				break
 			}
 		}
-		if subnetID == 0 {
-			return nil, fmt.Errorf("subnet with label %s not found in VPC", subnetName)
-		}
 	} else {
-		subnetID = vpc.Subnets[0].ID
-		ipv6Config = getVPCLinodeInterfaceIPv6Config(machineScope, len(vpc.Subnets[0].IPv6))
+		subnetName := effectiveVPCSubnetName(machineScope)
+		if subnetName != "" {
+			for _, subnet := range vpc.Subnets {
+				if subnet.Label == subnetName {
+					subnetID = subnet.ID
+					ipv6Config = getVPCLinodeInterfaceIPv6Config(machineScope, len(subnet.IPv6))
+					break
+				}
+			}
+			if subnetID == 0 {
+				return nil, fmt.Errorf("subnet with label %s not found in VPC", subnetName)
+			}
+		} else {
+			subnetID = vpc.Subnets[0].ID
+			ipv6Config = getVPCLinodeInterfaceIPv6Config(machineScope, len(vpc.Subnets[0].IPv6))
+		}
 	}
 
 	// Check if a VPC interface already exists
@@ -846,30 +880,34 @@ func getVPCInterfaceConfigFromDirectID(ctx context.Context, machineScope *scope.
 
 	var (
 		subnetID   int
-		subnetName string
 		ipv6Config *linodego.InstanceConfigInterfaceCreateOptionsIPv6
 	)
 
-	// Safety check for when LinodeCluster is nil (e.g., when using direct VPCID without cluster)
-	if machineScope.LinodeCluster != nil && machineScope.LinodeCluster.Spec.Network.SubnetName != "" {
-		subnetName = machineScope.LinodeCluster.Spec.Network.SubnetName
-	}
-
-	// If subnet name specified, find matching subnet; otherwise use first subnet
-	if subnetName != "" {
+	if machineScope.LinodeMachine.Spec.VPCSubnetID != nil {
+		subnetID = *machineScope.LinodeMachine.Spec.VPCSubnetID
 		for _, subnet := range vpc.Subnets {
-			if subnet.Label == subnetName {
-				subnetID = subnet.ID
+			if subnet.ID == subnetID {
 				ipv6Config = getMachineIPv6Config(machineScope, len(subnet.IPv6))
 				break
 			}
 		}
-		if subnetID == 0 {
-			return nil, fmt.Errorf("subnet with label %s not found in VPC", subnetName)
-		}
 	} else {
-		subnetID = vpc.Subnets[0].ID
-		ipv6Config = getMachineIPv6Config(machineScope, len(vpc.Subnets[0].IPv6))
+		subnetName := effectiveVPCSubnetName(machineScope)
+		if subnetName != "" {
+			for _, subnet := range vpc.Subnets {
+				if subnet.Label == subnetName {
+					subnetID = subnet.ID
+					ipv6Config = getMachineIPv6Config(machineScope, len(subnet.IPv6))
+					break
+				}
+			}
+			if subnetID == 0 {
+				return nil, fmt.Errorf("subnet with label %s not found in VPC", subnetName)
+			}
+		} else {
+			subnetID = vpc.Subnets[0].ID
+			ipv6Config = getMachineIPv6Config(machineScope, len(vpc.Subnets[0].IPv6))
+		}
 	}
 
 	// Check if a VPC interface already exists

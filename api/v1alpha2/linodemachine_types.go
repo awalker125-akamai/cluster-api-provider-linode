@@ -176,6 +176,20 @@ type LinodeMachineSpec struct {
 	// +optional
 	VPCID *int `json:"vpcID,omitempty"`
 
+	// vpcSubnetName is the label of the subnet within the primary VPC to use for the primary (eth0) interface.
+	// When set, takes precedence over the cluster-level subnetName setting.
+	// Only valid when vpcRef or vpcID is configured.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
+	// +optional
+	VPCSubnetName string `json:"vpcSubnetName,omitempty"`
+
+	// vpcSubnetID is the ID of the subnet within the primary VPC to use for the primary (eth0) interface.
+	// When set, takes precedence over vpcSubnetName and the cluster-level subnetName setting.
+	// Only valid when vpcRef or vpcID is configured.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable"
+	// +optional
+	VPCSubnetID *int `json:"vpcSubnetID,omitempty"`
+
 	// rdmaVPC attaches one or more RDMA VPC subnets to this instance.
 	// Each subnet produces a separate rdma_vpc interface. Requires interfaceGeneration=linode.
 	// Exactly one of vpcID or vpcRef must be set, and exactly one of subnetIDs or subnetNames must be set.
