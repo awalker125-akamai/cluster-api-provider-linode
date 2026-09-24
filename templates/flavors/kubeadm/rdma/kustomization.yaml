@@ -4,7 +4,10 @@ kind: Kustomization
 resources:
   - ../default
   - rdmaVPC.yaml
-  - rdmaMachineDeployments.yaml
+  #- rdmaMachineDeployments.yaml
+  # !!TEMPORARY!! Adds GPU LMTs + MachineDeployments for host-pin round-robin testing.
+  # Remove rdmaHostPinTemplates.yaml once host-pinning is handled via placement groups.
+  - rdmaHostPinTemplates.yaml
 
 patches:
   # Rename the base worker LMT (${CLUSTER_NAME}) to ${CLUSTER_NAME}-0 so all three pools

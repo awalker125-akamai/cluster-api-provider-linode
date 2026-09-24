@@ -710,6 +710,7 @@ _Appears in:_
 | `ipv6Options` _[IPv6CreateOptions](#ipv6createoptions)_ | ipv6Options defines the IPv6 options for the instance.<br />If not specified, IPv6 ranges won't be allocated to instance. |  | Optional: \{\} <br /> |
 | `networkHelper` _boolean_ | networkHelper is an option usually enabled on account level. It helps configure networking automatically for instances.<br />You can use this to enable/disable the network helper for a specific instance.<br />For more information, see https://techdocs.akamai.com/cloud-computing/docs/automatically-configure-networking<br />Defaults to true. |  | Optional: \{\} <br /> |
 | `interfaceGeneration` _[InterfaceGeneration](#interfacegeneration)_ | interfaceGeneration is the generation of the interface to use for the cluster's<br />nodes in interface / linodeInterface are not specified for a LinodeMachine.<br />If not set, defaults to "legacy_config". | legacy_config | Enum: [legacy_config linode] <br />Optional: \{\} <br /> |
+| `hostPinID` _integer_ | !!TEMPORARY!! hostPinID pins this instance to a specific physical host for RDMA co-location testing.<br />This is NOT intended as a long-term API surface — remove once host-pinning is handled upstream<br />(e.g. via placement groups or a proper RDMA scheduling primitive).<br />See: https://github.com/linode/cluster-api-provider-linode/issues/TODO |  | Optional: \{\} <br /> |
 
 
 #### LinodeMachineStatus
