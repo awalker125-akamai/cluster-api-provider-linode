@@ -662,9 +662,7 @@ func getVPCInterfaceConfig(ctx context.Context, machineScope *scope.MachineScope
 
 	for i, netInterface := range interfaces {
 		if netInterface.Purpose == linodego.InterfacePurposeVPC {
-			if interfaces[i].SubnetID == nil || *interfaces[i].SubnetID == 0 {
-				interfaces[i].SubnetID = &subnetID
-			}
+			interfaces[i].SubnetID = &subnetID
 			// If IPv6 range config is not empty, add it to the interface configuration
 			if !isIPv6ConfigEmpty(ipv6Config) {
 				interfaces[i].IPv6 = ipv6Config
@@ -731,9 +729,7 @@ func getVPCLinodeInterfaceConfig(ctx context.Context, machineScope *scope.Machin
 	// Check if a VPC interface already exists
 	for iface, netInterface := range linodeInterfaces {
 		if netInterface.VPC != nil {
-			if linodeInterfaces[iface].VPC.SubnetID == 0 {
-				linodeInterfaces[iface].VPC.SubnetID = subnetID
-			}
+			linodeInterfaces[iface].VPC.SubnetID = subnetID
 			// If IPv6 range config is not empty, add it to the interface configuration
 			if !isVPCInterfaceIPv6ConfigEmpty(ipv6Config) {
 				linodeInterfaces[iface].VPC.IPv6 = ipv6Config
@@ -827,9 +823,7 @@ func getVPCLinodeInterfaceConfigFromDirectID(ctx context.Context, machineScope *
 	// Check if a VPC interface already exists
 	for i, netInterface := range linodeInterfaces {
 		if netInterface.VPC != nil {
-			if linodeInterfaces[i].VPC.SubnetID == 0 {
-				linodeInterfaces[i].VPC.SubnetID = subnetID
-			}
+			linodeInterfaces[i].VPC.SubnetID = subnetID
 			if !isVPCInterfaceIPv6ConfigEmpty(ipv6Config) {
 				linodeInterfaces[i].VPC.IPv6 = ipv6Config
 			}
@@ -905,9 +899,7 @@ func getVPCInterfaceConfigFromDirectID(ctx context.Context, machineScope *scope.
 	// Check if a VPC interface already exists
 	for i, netInterface := range interfaces {
 		if netInterface.Purpose == linodego.InterfacePurposeVPC {
-			if interfaces[i].SubnetID == nil || *interfaces[i].SubnetID == 0 {
-				interfaces[i].SubnetID = &subnetID
-			}
+			interfaces[i].SubnetID = &subnetID
 			if !isIPv6ConfigEmpty(ipv6Config) {
 				interfaces[i].IPv6 = ipv6Config
 			}
