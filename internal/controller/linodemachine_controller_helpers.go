@@ -161,20 +161,27 @@ func newCreateConfig(ctx context.Context, machineScope *scope.MachineScope, gzip
 		logger.Error(err, "Panic! Struct of LinodeMachineSpec is different than InstanceCreateOptions")
 		return nil, err
 	}
+	logger.Info("CreateConfig /////", "createConfig", createConfig)
 
 	createConfig.Booted = new(false)
 	if err := setUserData(ctx, machineScope, createConfig, gzipCompressionEnabled, logger); err != nil {
 		return nil, err
 	}
 
+	logger.Info("CreateConfig ||||||", "createConfig", createConfig)
 	if err := fillCreateConfig(ctx, createConfig, machineScope); err != nil {
 		return nil, err
 	}
+
+	// dump the createConfig for debugging purposes
+	logger.Info("CreateConfig >>>>", "createConfig", createConfig)
 
 	// Configure VPC interface if needed
 	if err := configureVPCInterface(ctx, machineScope, createConfig, logger); err != nil {
 		return nil, err
 	}
+
+	logger.Info("CreateConfig <<<<<", "createConfig", createConfig)
 
 	// Configure VLAN interface if needed
 	if machineScope.LinodeCluster.Spec.Network.UseVlan {
@@ -209,6 +216,18 @@ func newCreateConfig(ctx context.Context, machineScope *scope.MachineScope, gzip
 
 // configureVPCInterface handles all VPC configuration scenarios and adds the appropriate interface
 func configureVPCInterface(ctx context.Context, machineScope *scope.MachineScope, createConfig *linodego.InstanceCreateOptions, logger logr.Logger) error {
+
+	// Check if there are existing Linode instance interfaces in the createConfig and skip adding a new one if necessary
+	if len(createConfig.LinodeInstanceInterfaces) > 0 {
+		for _, iface := range createConfig.LinodeInstanceInterfaces {
+			if iface.VPC != nil {
+				// VPC interface already exists, no need to add another one
+				logger.Info("VPC interface already exists, skipping addition")
+				return nil
+			}
+		}
+	}
+
 	// First check if a direct VPCID is specified on the machine then the cluster
 	if machineScope.LinodeMachine.Spec.VPCID != nil {
 		return addVPCInterfaceFromDirectID(ctx, machineScope, createConfig, logger, *machineScope.LinodeMachine.Spec.VPCID)
@@ -684,6 +703,10 @@ func getVPCInterfaceConfig(ctx context.Context, machineScope *scope.MachineScope
 
 func getVPCLinodeInterfaceConfig(ctx context.Context, machineScope *scope.MachineScope, linodeInterfaces []linodego.LinodeInstanceInterfaceCreateOptions, logger logr.Logger, vpcRef *corev1.ObjectReference) (*linodego.LinodeInstanceInterfaceCreateOptions, error) {
 
+	logger.Info("ANDY1 about to start vpc linode interface configuration lookup")
+
+	logger.Info("ANDY2 here are the interfaces[] prior to VPC lookup", "interfaces", linodeInterfaces)
+
 	// // If the user supplied a VPC interface with a pre-populated SubnetID as the first interface, skip further lookup and honor it
 	// for idx, netInterface := range linodeInterfaces {
 	// 	if netInterface.VPC != nil && netInterface.VPC.SubnetID != 0 && idx == 0 {
@@ -723,9 +746,12 @@ func getVPCLinodeInterfaceConfig(ctx context.Context, machineScope *scope.Machin
 		return nil, errors.New("failed to find subnet as subnet id set is 0")
 	}
 
+	logger.Info("ANDY3 so far we've looked up the VPC and subnet and have subnetID", "subnetID", subnetID, "ipv6Config", ipv6Config)
+
 	// Check if a VPC interface already exists
 	for iface, netInterface := range linodeInterfaces {
 		if netInterface.VPC != nil {
+			logger.Info("ANDY4 overriding existing VPC interface with new subnetID and ipv6Config", "orig", linodeInterfaces[iface].VPC.SubnetID, "new", subnetID)
 			linodeInterfaces[iface].VPC.SubnetID = subnetID
 			// If IPv6 range config is not empty, add it to the interface configuration
 			if !isVPCInterfaceIPv6ConfigEmpty(ipv6Config) {
