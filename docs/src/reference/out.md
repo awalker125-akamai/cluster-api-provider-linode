@@ -621,7 +621,7 @@ _Appears in:_
 | `public` _[PublicInterfaceCreateOptions](#publicinterfacecreateoptions)_ | public is the public interface configuration for the interface. |  | Optional: \{\} <br /> |
 | `vpc` _[VPCInterfaceCreateOptions](#vpcinterfacecreateoptions)_ | vpc is the VPC interface configuration for the interface. |  | Optional: \{\} <br /> |
 | `vlan` _[VLANInterface](#vlaninterface)_ | vlan is the VLAN interface configuration for the interface. |  | Optional: \{\} <br /> |
-| `rdmaVPC` _[RDMAVPCInterfaceSpec](#rdmavpcinterfacespec)_ | rdmaVPC attaches this interface entry to an RDMA VPC subnet.<br />Set exactly one of vpc, public, vlan, or rdmaVPC per entry.<br />firewallID is ignored for rdmaVPC entries — CAPL always injects firewall_id: -1.<br />NOTE: RDMA VPC interfaces may not currently be available to all users. |  | Optional: \{\} <br /> |
+| `rdmaVPC` _[RDMAVPCInterfaceSpec](#rdmavpcinterfacespec)_ | rdmaVPC attaches this interface entry to an RDMA VPC subnet.<br />Mutually exclusive with vpc, public and vlan.<br />firewallID is ignored for rdmaVPC entries<br />NOTE: RDMA VPC interfaces may not currently be available to all users. |  | Optional: \{\} <br /> |
 
 
 #### LinodeMachine
