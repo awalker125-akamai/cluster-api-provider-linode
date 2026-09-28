@@ -703,18 +703,6 @@ func getVPCInterfaceConfig(ctx context.Context, machineScope *scope.MachineScope
 
 func getVPCLinodeInterfaceConfig(ctx context.Context, machineScope *scope.MachineScope, linodeInterfaces []linodego.LinodeInstanceInterfaceCreateOptions, logger logr.Logger, vpcRef *corev1.ObjectReference) (*linodego.LinodeInstanceInterfaceCreateOptions, error) {
 
-	logger.Info("ANDY1 about to start vpc linode interface configuration lookup")
-
-	logger.Info("ANDY2 here are the interfaces[] prior to VPC lookup", "interfaces", linodeInterfaces)
-
-	// // If the user supplied a VPC interface with a pre-populated SubnetID as the first interface, skip further lookup and honor it
-	// for idx, netInterface := range linodeInterfaces {
-	// 	if netInterface.VPC != nil && netInterface.VPC.SubnetID != 0 && idx == 0 {
-	// 		logger.Info("Using pre-populated VPC interface with SubnetID", "SubnetID", netInterface.VPC.SubnetID)
-	// 		return nil, nil //nolint:nilnil // caller pre-populated SubnetID; skip lookup and honor it
-	// 	}
-	// }
-
 	linodeVPC, err := getVPCFromRef(ctx, machineScope, logger, vpcRef)
 	if err != nil {
 		return nil, err
@@ -746,12 +734,9 @@ func getVPCLinodeInterfaceConfig(ctx context.Context, machineScope *scope.Machin
 		return nil, errors.New("failed to find subnet as subnet id set is 0")
 	}
 
-	logger.Info("ANDY3 so far we've looked up the VPC and subnet and have subnetID", "subnetID", subnetID, "ipv6Config", ipv6Config)
-
 	// Check if a VPC interface already exists
 	for iface, netInterface := range linodeInterfaces {
 		if netInterface.VPC != nil {
-			logger.Info("ANDY4 overriding existing VPC interface with new subnetID and ipv6Config", "orig", linodeInterfaces[iface].VPC.SubnetID, "new", subnetID)
 			linodeInterfaces[iface].VPC.SubnetID = subnetID
 			// If IPv6 range config is not empty, add it to the interface configuration
 			if !isVPCInterfaceIPv6ConfigEmpty(ipv6Config) {
