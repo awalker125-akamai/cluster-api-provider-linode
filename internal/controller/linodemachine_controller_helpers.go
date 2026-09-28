@@ -161,7 +161,6 @@ func newCreateConfig(ctx context.Context, machineScope *scope.MachineScope, gzip
 		logger.Error(err, "Panic! Struct of LinodeMachineSpec is different than InstanceCreateOptions")
 		return nil, err
 	}
-	logger.Info("CreateConfig /////", "createConfig", createConfig)
 
 	createConfig.Booted = new(false)
 	if err := setUserData(ctx, machineScope, createConfig, gzipCompressionEnabled, logger); err != nil {
@@ -173,15 +172,10 @@ func newCreateConfig(ctx context.Context, machineScope *scope.MachineScope, gzip
 		return nil, err
 	}
 
-	// dump the createConfig for debugging purposes
-	logger.Info("CreateConfig >>>>", "createConfig", createConfig)
-
 	// Configure VPC interface if needed
 	if err := configureVPCInterface(ctx, machineScope, createConfig, logger); err != nil {
 		return nil, err
 	}
-
-	logger.Info("CreateConfig <<<<<", "createConfig", createConfig)
 
 	// Configure VLAN interface if needed
 	if machineScope.LinodeCluster.Spec.Network.UseVlan {
@@ -190,12 +184,12 @@ func newCreateConfig(ctx context.Context, machineScope *scope.MachineScope, gzip
 		}
 	}
 
-	// Configure RDMA VPC interfaces if needed
-	if machineScope.LinodeMachine.Spec.RDMAVPC != nil {
-		if err := configureRDMAVPCInterfaces(ctx, machineScope, createConfig, logger); err != nil {
-			return nil, err
-		}
-	}
+	// // Configure RDMA VPC interfaces if needed
+	// if machineScope.LinodeMachine.Spec.RDMAVPC != nil {
+	// 	if err := configureRDMAVPCInterfaces(ctx, machineScope, createConfig, logger); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 
 	// Configure placement group if needed
 	if machineScope.LinodeMachine.Spec.PlacementGroupID != 0 || machineScope.LinodeMachine.Spec.PlacementGroupRef != nil {
