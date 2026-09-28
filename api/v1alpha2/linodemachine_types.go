@@ -384,8 +384,8 @@ type LinodeInterfaceCreateOptions struct {
 	VLAN *VLANInterface `json:"vlan,omitempty"`
 
 	// rdmaVPC attaches this interface entry to an RDMA VPC subnet.
-	// Set exactly one of vpc, public, vlan, or rdmaVPC per entry.
-	// firewallID is ignored for rdmaVPC entries — CAPL always injects firewall_id: -1.
+	// Mutually exclusive with vpc, public and vlan.
+	// firewallID is ignored for rdmaVPC entries
 	// NOTE: RDMA VPC interfaces may not currently be available to all users.
 	// +optional
 	RDMAVPC *RDMAVPCInterfaceSpec `json:"rdmaVPC,omitempty"`
