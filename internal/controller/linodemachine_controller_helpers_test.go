@@ -1597,6 +1597,79 @@ func TestConfigureVPCInterface(t *testing.T) {
 	}
 }
 
+func TestConfigureVPCInterfaceWithExistingLinodeInterfaces(t *testing.T) {
+	t.Parallel()
+
+	t.Run("adds configured VPC when supplied interfaces have no VPC", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := gomock.NewController(t)
+		linodeClient := mock.NewMockLinodeClient(ctrl)
+		k8sClient := mock.NewMockK8sClient(ctrl)
+		linodeClient.EXPECT().GetVPC(gomock.Any(), 123).Return(&linodego.VPC{
+			ID:      123,
+			Subnets: []linodego.VPCSubnet{{ID: 456, Label: "subnet-1"}},
+		}, nil)
+
+		createConfig := &linodego.InstanceCreateOptions{
+			LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{{
+				LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{
+					Public: &linodego.PublicInterfaceCreateOptions{},
+				},
+			}},
+		}
+		machineScope := &scope.MachineScope{
+			LinodeClient: linodeClient,
+			Client:       k8sClient,
+			LinodeMachine: &infrav1alpha2.LinodeMachine{
+				Spec: infrav1alpha2.LinodeMachineSpec{VPCID: new(123)},
+			},
+			LinodeCluster: &infrav1alpha2.LinodeCluster{},
+		}
+
+		err := configureVPCInterface(t.Context(), machineScope, createConfig, testr.New(t))
+
+		require.NoError(t, err)
+		require.Len(t, createConfig.LinodeInstanceInterfaces, 2)
+		require.NotNil(t, createConfig.LinodeInstanceInterfaces[0].VPC)
+		require.Equal(t, 456, createConfig.LinodeInstanceInterfaces[0].VPC.SubnetID)
+		require.NotNil(t, createConfig.LinodeInstanceInterfaces[1].Public)
+	})
+
+	t.Run("preserves supplied VPC subnet and skips VPC lookup", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := gomock.NewController(t)
+		linodeClient := mock.NewMockLinodeClient(ctrl)
+		k8sClient := mock.NewMockK8sClient(ctrl)
+
+		const suppliedSubnetID = 789
+		createConfig := &linodego.InstanceCreateOptions{
+			LinodeInstanceInterfaces: []linodego.LinodeInstanceInterfaceCreateOptions{{
+				LinodeInterfaceCreateOptions: linodego.LinodeInterfaceCreateOptions{
+					VPC: &linodego.VPCInterfaceCreateOptions{SubnetID: suppliedSubnetID},
+				},
+			}},
+		}
+		machineScope := &scope.MachineScope{
+			LinodeClient: linodeClient,
+			Client:       k8sClient,
+			LinodeMachine: &infrav1alpha2.LinodeMachine{
+				// This ID would fail lookup if configureVPCInterface tried to resolve it.
+				Spec: infrav1alpha2.LinodeMachineSpec{VPCID: new(999)},
+			},
+			LinodeCluster: &infrav1alpha2.LinodeCluster{},
+		}
+
+		err := configureVPCInterface(t.Context(), machineScope, createConfig, testr.New(t))
+
+		require.NoError(t, err)
+		require.Len(t, createConfig.LinodeInstanceInterfaces, 1)
+		require.NotNil(t, createConfig.LinodeInstanceInterfaces[0].VPC)
+		require.Equal(t, suppliedSubnetID, createConfig.LinodeInstanceInterfaces[0].VPC.SubnetID)
+	})
+}
+
 func TestGetVPCInterfaceConfig(t *testing.T) {
 	t.Parallel()
 
@@ -3029,7 +3102,7 @@ func TestResolveLinodeInterfaceRDMASubnetRefs(t *testing.T) {
 	}
 
 	machineScope := &scope.MachineScope{
-		Client:       mockK8sClient,
+		Client:        mockK8sClient,
 		LinodeMachine: &infrav1alpha2.LinodeMachine{ObjectMeta: metav1.ObjectMeta{Namespace: "default"}},
 		LinodeCluster: &infrav1alpha2.LinodeCluster{},
 	}
