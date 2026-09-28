@@ -167,7 +167,6 @@ func newCreateConfig(ctx context.Context, machineScope *scope.MachineScope, gzip
 		return nil, err
 	}
 
-	logger.Info("CreateConfig ||||||", "createConfig", createConfig)
 	if err := fillCreateConfig(ctx, createConfig, machineScope); err != nil {
 		return nil, err
 	}

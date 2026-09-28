@@ -563,7 +563,6 @@ func (r *LinodeMachineReconciler) reconcilePreflightMetadataSupportConfigure(ctx
 
 func (r *LinodeMachineReconciler) reconcilePreflightCreate(ctx context.Context, logger logr.Logger, machineScope *scope.MachineScope) (ctrl.Result, error) {
 	// get the bootstrap data for the Linode instance and set it for create config
-
 	createOpts, err := newCreateConfig(ctx, machineScope, r.GzipCompressionEnabled, logger)
 	if err != nil {
 		logger.Error(err, "Failed to create Linode machine InstanceCreateOptions")
