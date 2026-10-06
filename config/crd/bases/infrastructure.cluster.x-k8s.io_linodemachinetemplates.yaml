@@ -689,11 +689,11 @@ spec:
                                   x-kubernetes-map-type: atomic
                               type: object
                               x-kubernetes-validations:
-                              - message: exactly one of subnetID or vpcRef must be
-                                  set
-                                rule: has(self.subnetID) != has(self.vpcRef)
-                              - message: subnetName is required when vpcRef is set
-                                rule: '!has(self.vpcRef) || self.subnetName != '''''
+                              - message: specify either subnetID alone, or both vpcRef
+                                  and a non-empty subnetName
+                                rule: (has(self.subnetID) && !has(self.vpcRef)) ||
+                                  (!has(self.subnetID) && has(self.vpcRef) && self.subnetName
+                                  != '')
                             vlan:
                               description: vlan is the VLAN interface configuration
                                 for the interface.

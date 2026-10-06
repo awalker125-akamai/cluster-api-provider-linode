@@ -362,8 +362,7 @@ type LinodeInterfaceCreateOptions struct {
 // RDMAVPCInterfaceSpec defines an RDMA VPC subnet attachment within a linodeInterfaces entry.
 // Mirrors linodego.RDMAVPCInterfaceCreateOptions. IP address assignment is always auto.
 // Specify either subnetID (direct) or vpcRef+subnetName (resolved at reconcile time).
-// +kubebuilder:validation:XValidation:rule="has(self.subnetID) != has(self.vpcRef)",message="exactly one of subnetID or vpcRef must be set"
-// +kubebuilder:validation:XValidation:rule="!has(self.vpcRef) || self.subnetName != ''",message="subnetName is required when vpcRef is set"
+// +kubebuilder:validation:XValidation:rule="(has(self.subnetID) && !has(self.vpcRef)) || (!has(self.subnetID) && has(self.vpcRef) && self.subnetName != '')",message="specify either subnetID alone, or both vpcRef and a non-empty subnetName"
 type RDMAVPCInterfaceSpec struct {
 	// subnetID is the ID of the RDMA VPC subnet to attach.
 	// Use when the subnet ID is known upfront. Mutually exclusive with vpcRef/subnetName.
