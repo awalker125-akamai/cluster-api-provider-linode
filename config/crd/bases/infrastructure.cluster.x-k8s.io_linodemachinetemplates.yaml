@@ -693,7 +693,7 @@ spec:
                                   and a non-empty subnetName
                                 rule: (has(self.subnetID) && !has(self.vpcRef)) ||
                                   (!has(self.subnetID) && has(self.vpcRef) && self.subnetName
-                                  != '')
+                                  != "")
                             vlan:
                               description: vlan is the VLAN interface configuration
                                 for the interface.

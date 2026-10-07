@@ -575,7 +575,7 @@ func (r *LinodeMachineReconciler) reconcilePreflightMetadataSupportConfigure(ctx
 // errors here are transient: the function returns a requeue rather than a terminal failure.
 func (r *LinodeMachineReconciler) reconcilePreflightRDMAVPCRefs(ctx context.Context, logger logr.Logger, machineScope *scope.MachineScope) (ctrl.Result, error) {
 	anyRef := false
-	for i, iface := range machineScope.LinodeMachine.Spec.LinodeInterfaces {
+	for idx, iface := range machineScope.LinodeMachine.Spec.LinodeInterfaces {
 		if iface.RDMAVPC == nil || iface.RDMAVPC.VPCRef == nil {
 			continue
 		}
@@ -587,17 +587,17 @@ func (r *LinodeMachineReconciler) reconcilePreflightRDMAVPCRefs(ctx context.Cont
 		}
 		linodeVPC := infrav1alpha2.LinodeVPC{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: vpcRef.Name}}
 		if err := machineScope.Client.Get(ctx, client.ObjectKeyFromObject(&linodeVPC), &linodeVPC); err != nil {
-			logger.Error(err, "Failed to fetch RDMA LinodeVPC for interface", "index", i, "vpc", vpcRef.Name)
+			logger.Error(err, "Failed to fetch RDMA LinodeVPC for interface", "index", idx, "vpc", vpcRef.Name)
 			machineScope.LinodeMachine.SetCondition(metav1.Condition{
 				Type:    ConditionPreflightRDMALinodeVPCReady,
 				Status:  metav1.ConditionFalse,
 				Reason:  "RDMALinodeVPCFetchError",
 				Message: err.Error(),
 			})
-			return ctrl.Result{RequeueAfter: reconciler.WithJitter(reconciler.DefaultMachineControllerRetryDelay)}, nil
+			return ctrl.Result{RequeueAfter: reconciler.WithJitter(reconciler.DefaultMachineControllerRetryDelay)}, err
 		}
 		if !linodeVPC.Status.Ready || linodeVPC.Spec.VPCID == nil {
-			logger.Info("RDMA LinodeVPC is not yet ready", "index", i, "vpc", vpcRef.Name)
+			logger.Info("RDMA LinodeVPC is not yet ready", "index", idx, "vpc", vpcRef.Name)
 			machineScope.LinodeMachine.SetCondition(metav1.Condition{
 				Type:   ConditionPreflightRDMALinodeVPCReady,
 				Status: metav1.ConditionFalse,
