@@ -46,13 +46,7 @@ func UnwrapError(err error) error {
 // IsRetryableError determines if the error is retryable, meaning a controller that
 // encounters this error should requeue reconciliation to try again later
 func IsRetryableError(err error) bool {
-	// net.Error covers *url.Error and other network-level timeouts. These are not
-	// wrapped as *linodego.Error by linodego v2, so ErrHasStatus misses them.
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-	return linodego.ErrHasStatus(
+	if linodego.ErrHasStatus(
 		err,
 		http.StatusTooManyRequests,
 		http.StatusInternalServerError,
@@ -60,7 +54,21 @@ func IsRetryableError(err error) bool {
 		http.StatusGatewayTimeout,
 		http.StatusServiceUnavailable,
 		http.StatusRequestTimeout,
-		linodego.ErrorFromError) || errors.Is(err, http.ErrHandlerTimeout) || errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.ErrUnexpectedEOF)
+		linodego.ErrorFromError,
+	) {
+		return true
+	}
+
+	if errors.Is(err, http.ErrHandlerTimeout) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, os.ErrDeadlineExceeded) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // GetInstanceID determines the instance ID from the ProviderID
